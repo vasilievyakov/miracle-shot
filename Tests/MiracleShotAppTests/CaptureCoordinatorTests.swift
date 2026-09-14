@@ -238,4 +238,33 @@ final class CaptureCoordinatorTests: XCTestCase {
         preview.onDismiss?()
         XCTAssertEqual(sut.state, .idle)
     }
+
+    func testPublishRunsTheFinishPath() async {
+        await sut.perform(.captureArea)
+        let source = sut.lastCapture!
+        log.entries.removeAll()
+
+        let image = makeTestImage(width: 20, height: 10)
+        sut.publish(image, derivedFrom: source)
+
+        XCTAssertEqual(log.entries.first, "copy")
+        XCTAssertTrue(log.entries[1].hasPrefix("save("))
+        XCTAssertEqual(log.entries.last, "preview")
+        XCTAssertEqual(log.entries.count, 3)
+        XCTAssertEqual(sut.history.entries.count, 2)
+        XCTAssertEqual(sut.lastCapture?.pixelWidth, image.width)
+        XCTAssertEqual(sut.lastCapture?.pixelHeight, image.height)
+    }
+
+    func testPublishIsRefusedWhileSelecting() async {
+        selection.hold = true
+        let task = Task { await sut.perform(.captureArea) }
+        await Task.yield()
+        XCTAssertEqual(sut.state, .selecting(.area))
+        sut.publish(makeTestImage(), derivedFrom: makeCapture())
+        XCTAssertFalse(log.entries.contains("copy"))
+        selection.result = nil
+        selection.resume()
+        await task.value
+    }
 }

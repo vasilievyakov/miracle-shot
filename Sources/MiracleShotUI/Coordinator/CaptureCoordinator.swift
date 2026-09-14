@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import MiracleShotCore
 
@@ -99,6 +100,13 @@ public final class CaptureCoordinator {
             notifications.post(title: "Could not apply background", body: "Rendering \"\(preset.name)\" failed.", isError: true)
             return
         }
+        publish(image, derivedFrom: source)
+    }
+
+    /// Pushes an image derived from `source` (a background applied, an edit finished) through the normal finish
+    /// path: clipboard, file, history, preview. Refused only while a capture is in flight.
+    public func publish(_ image: CGImage, derivedFrom source: Capture) {
+        guard state.canStartCapture else { return }
         let size = CGSize(width: CGFloat(image.width) / source.scaleFactor, height: CGFloat(image.height) / source.scaleFactor)
         let shot = Capture(image: image, sourceAppName: source.sourceAppName, sourceWindowTitle: source.sourceWindowTitle,
                            bounds: CGRect(origin: source.bounds.origin, size: size), scaleFactor: source.scaleFactor)
