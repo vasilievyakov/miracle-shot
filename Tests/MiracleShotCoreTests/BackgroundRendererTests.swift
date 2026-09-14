@@ -80,4 +80,26 @@ final class BackgroundRendererTests: XCTestCase {
         TestImages.assertClose(TestImages.pixel(out, x: 8, y: 8), lime)
         XCTAssertEqual(TestImages.pixel(out, x: 0, y: 0).a, 0)   // rounded corner is transparent
     }
+
+    func testUnrenderablePresetsReturnNil() {
+        let nan = preset(fill: .solid(color: BrandPalette.lime), padding: .nan)
+        XCTAssertNil(BackgroundRenderer.render(source(), preset: nan, scale: 1))
+        let negative = preset(fill: .solid(color: BrandPalette.lime), padding: -4)
+        XCTAssertNil(BackgroundRenderer.render(source(), preset: negative, scale: 1))
+        let nanRadius = preset(fill: .solid(color: BrandPalette.lime), radius: .nan)
+        XCTAssertNil(BackgroundRenderer.render(source(), preset: nanRadius, scale: 1))
+        let noStops = preset(fill: .linearGradient(stops: [], angle: 0))
+        XCTAssertNil(BackgroundRenderer.render(source(), preset: noStops, scale: 1))
+        XCTAssertNil(BackgroundRenderer.swatch(noStops, size: 8))
+    }
+
+    func testFractionalScaleKeepsMarginsEqual() throws {
+        let out = try XCTUnwrap(BackgroundRenderer.render(source(), preset: preset(fill: .solid(color: BrandPalette.lime), padding: 3), scale: 1.5))
+        // 3 * 1.5 = 4.5 rounds away from zero to 5 px on every side.
+        XCTAssertEqual(out.width, 20 + 10)
+        TestImages.assertClose(TestImages.pixel(out, x: 4, y: 4), lime)
+        TestImages.assertClose(TestImages.pixel(out, x: 5, y: 5), red)
+        TestImages.assertClose(TestImages.pixel(out, x: 24, y: 14), red)
+        TestImages.assertClose(TestImages.pixel(out, x: 25, y: 15), lime)
+    }
 }
