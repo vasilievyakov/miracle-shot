@@ -1,0 +1,11 @@
+{
+  "id": "lab-dark",
+  "name": "Lab Dark",
+  "fill": { "linearGradient": { "angle": 160, "stops": [
+    { "color": "#1c1c1f", "location": 0 },
+    { "color": "#0b0b0c", "location": 1 }
+  ] } },
+  "padding": 64,
+  "cornerRadius": 12,
+  "shadow": { "blur": 40, "offsetY": 16, "opacity": 0.6 }
+}

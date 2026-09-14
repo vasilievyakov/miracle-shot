@@ -56,4 +56,24 @@ public enum BrandPalette {
     /// Selection overlay dimming, black at 35 percent.
     public static let overlayDim = BrandColor(red: 0, green: 0, blue: 0)
     public static let overlayDimAlpha: CGFloat = 0.35
+
+    /// Every token, for tests that enforce "palette only".
+    public static let all: [BrandColor] = [ink, ink2, ink3, bone, boneDim, boneFaint, lime, limeDim, coral, line]
+}
+
+/// Encoded as a "#rrggbb" string so preset JSON stays readable.
+extension BrandColor: Codable {
+    public init(from decoder: Decoder) throws {
+        let hex = try decoder.singleValueContainer().decode(String.self)
+        guard let color = BrandColor(hex: hex) else {
+            throw DecodingError.dataCorruptedError(in: try decoder.singleValueContainer(),
+                                                   debugDescription: "Not a #rrggbb color: \(hex)")
+        }
+        self = color
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(hex)
+    }
 }
