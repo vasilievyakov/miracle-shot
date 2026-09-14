@@ -19,14 +19,32 @@ enum TestImages {
                   bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
     }
 
-    /// Reads one pixel. `y` counts from the top, like screen coordinates.
+    /// Reads one pixel as straight (un-premultiplied) RGBA. `y` counts from the top, like screen coordinates.
     static func pixel(_ image: CGImage, x: Int, y: Int) -> RGBA {
         let ctx = context(width: image.width, height: image.height)
         ctx.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
         let data = ctx.data!.assumingMemoryBound(to: UInt8.self)
-        let row = image.height - 1 - y   // CGContext bitmaps are bottom-up
+        let row = y   // CGBitmapContext buffers are top-down: row 0 is the top scanline
         let i = row * ctx.bytesPerRow + x * 4
-        return RGBA(r: data[i], g: data[i + 1], b: data[i + 2], a: data[i + 3])
+        let a = data[i + 3]
+        func straight(_ v: UInt8) -> UInt8 {
+            a == 0 || a == 255 ? v : UInt8(min(255, (Int(v) * 255 + Int(a) / 2) / Int(a)))
+        }
+        return RGBA(r: straight(data[i]), g: straight(data[i + 1]), b: straight(data[i + 2]), a: a)
+    }
+
+    /// Top half `top`, bottom half `bottom`; used to prove orientation handling.
+    static func splitHorizontally(width: Int, height: Int, top: RGBA, bottom: RGBA) -> CGImage {
+        let ctx = context(width: width, height: height)
+        func fill(_ c: RGBA, _ rect: CGRect) {
+            ctx.setFillColor(CGColor(colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                     components: [CGFloat(c.r) / 255, CGFloat(c.g) / 255, CGFloat(c.b) / 255, CGFloat(c.a) / 255])!)
+            ctx.fill(rect)
+        }
+        // CG drawing coordinates have the origin at the bottom-left, so the top half is the upper rect.
+        fill(bottom, CGRect(x: 0, y: 0, width: width, height: height / 2))
+        fill(top, CGRect(x: 0, y: height / 2, width: width, height: height - height / 2))
+        return ctx.makeImage()!
     }
 
     static func assertClose(_ p: RGBA, _ q: RGBA, tolerance: Int = 2, file: StaticString = #filePath, line: UInt = #line) {

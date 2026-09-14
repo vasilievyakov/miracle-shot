@@ -21,4 +21,20 @@ final class ImageCodecTests: XCTestCase {
     func testGarbageDataDecodesToNil() {
         XCTAssertNil(ImageCodec.image(from: Data("nope".utf8)))
     }
+
+    func testPixelHelperReadsTopRowFirst() {
+        let red = TestImages.RGBA(r: 255, g: 0, b: 0, a: 255)
+        let blue = TestImages.RGBA(r: 0, g: 0, b: 255, a: 255)
+        let image = TestImages.splitHorizontally(width: 4, height: 4, top: red, bottom: blue)
+        TestImages.assertClose(TestImages.pixel(image, x: 1, y: 0), red)
+        TestImages.assertClose(TestImages.pixel(image, x: 1, y: 3), blue)
+        let decoded = ImageCodec.image(from: ImageCodec.pngData(from: image)!)!
+        TestImages.assertClose(TestImages.pixel(decoded, x: 2, y: 0), red)
+        TestImages.assertClose(TestImages.pixel(decoded, x: 2, y: 3), blue)
+    }
+
+    func testPixelHelperReturnsStraightAlpha() {
+        let image = TestImages.solid(width: 2, height: 2, r: 1, g: 0, b: 0, a: 0.5)
+        TestImages.assertClose(TestImages.pixel(image, x: 0, y: 0), .init(r: 255, g: 0, b: 0, a: 128), tolerance: 3)
+    }
 }

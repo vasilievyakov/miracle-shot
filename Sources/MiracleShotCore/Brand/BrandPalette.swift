@@ -23,8 +23,10 @@ public struct BrandColor: Sendable, Equatable, Hashable {
         String(format: "#%02x%02x%02x", Int((red * 255).rounded()), Int((green * 255).rounded()), Int((blue * 255).rounded()))
     }
 
+    private static let sRGB = CGColorSpace(name: CGColorSpace.sRGB)!
+
     public func cgColor(alpha: CGFloat = 1) -> CGColor {
-        CGColor(colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!, components: [red, green, blue, alpha])!
+        CGColor(colorSpace: Self.sRGB, components: [red, green, blue, alpha])!
     }
 }
 
