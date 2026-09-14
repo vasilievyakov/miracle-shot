@@ -1291,3 +1291,42 @@ Padding 64, corner radius 12 everywhere.
 **Step 5: Full suite, commit**
 
 `swift test` green (existing renderer tests must still pass unchanged). Commit: "Render backgrounds in 16 bit with OKLab stops, dithering and glows".
+
+---
+
+### Task 9: Proportional geometry (padding, radius, shadow in percent)
+
+User feedback: a fixed 64 pt padding is half the picture on a small fragment and a thin rim on a 5K capture. Geometry becomes a percentage of the capture's size so every screenshot gets the same proportions.
+
+**Reference size:** `reference = (source.width + source.height) / 2` in source pixels. Padding, corner radius, shadow blur and shadow offset are percentages of it. Floors in points (multiplied by `scale`) keep tiny captures usable: padding at least 24 pt, corner radius at least 6 pt. Nothing is scaled by `scale` except the floors, because the reference is already in pixels.
+
+**Files:**
+- Modify: `Sources/MiracleShotCore/Background/BackgroundPreset.swift` — rename `padding` -> `paddingPercent`, `cornerRadius` -> `cornerRadiusPercent`; `BackgroundShadow` fields `blur` -> `blurPercent`, `offsetY` -> `offsetPercent`, `opacity` unchanged. Update doc comments ("percent of the mean side of the screenshot"). JSON keys follow the property names.
+- Modify: `Sources/MiracleShotCore/Background/BackgroundRenderer.swift` — compute pixel values from the reference; add `public static let minimumPadding: CGFloat = 24` and `minimumCornerRadius: CGFloat = 6` (points); `isRenderable` checks the renamed fields (finite, non-negative).
+- Modify: the four preset JSON files: `paddingPercent` 8, `cornerRadiusPercent` 1.2, shadow `blurPercent` 5, `offsetPercent` 2, opacities unchanged (Lab Dark keeps 0.7 etc.).
+- Modify tests: `BackgroundRendererTests` (all geometry expectations), `BackgroundPresetTests` (field names, built-in checks use `paddingPercent > 0`), `CaptureCoordinatorTests` (`solidPreset` and pixel expectations), keep every existing assertion's intent.
+
+**Renderer geometry (exact):**
+
+```swift
+let reference = CGFloat(source.width + source.height) / 2
+let padding = max(Self.minimumPadding * scale, reference * CGFloat(preset.paddingPercent) / 100).rounded()
+let radius = min(max(Self.minimumCornerRadius * scale, reference * CGFloat(preset.cornerRadiusPercent) / 100),
+                 imageRect.width / 2, imageRect.height / 2)
+// shadow
+blur: reference * CGFloat(shadow.blurPercent) / 100
+offset: CGSize(width: 0, height: -reference * CGFloat(shadow.offsetPercent) / 100)
+```
+
+`cornerRadiusPercent == 0` means square corners: apply the floor only when the percent is greater than zero (same for padding: `paddingPercent == 0` gives zero padding, so a test can render edge to edge).
+
+**Tests to rewrite (keep names where the intent is unchanged):**
+- Use a 200x100 source (reference 150). `paddingPercent: 20` -> padding 30 px -> output 260x160; image spans x 30..<230, y 30..<130. Update `testSolidFillPadsAndKeepsSource`, `testCornerRadiusClipsSourceCorners` (`cornerRadiusPercent: 8` -> 12 px radius; corner pixel (30,30) is fill, (130,30) top edge midpoint is red), `testShadowDarkensBelowTheImage` (`blurPercent 4`, `offsetPercent 6` -> 6 px blur, 9 px offset; sample 4 px under the bottom edge and 12 px above the top edge).
+- `testScaleMultipliesPointValues` becomes `testScaleOnlyRaisesTheFloors`: 200x100 with `paddingPercent 20` at scale 2 is still 260x160 (percent of pixels does not change with scale); a 20x10 source with `paddingPercent 20` at scale 1 gets the 24 pt floor -> 68x58, at scale 2 -> 116x106.
+- `testFractionalScaleKeepsMarginsEqual`: 200x100, `paddingPercent 15.5` -> 23.25 -> but floor 24 * 1.5 = 36 wins at scale 1.5 -> 272x172, margins equal (check pixels at 35 and 36 like before).
+- Gradient, dither, glow and perceptual tests: they use a 2x2 source with big padding; switch to `paddingPercent` values that give the same canvas: with a 2x2 source the floor applies, so use a 2x2 source with the floor (24 px -> 50x50) only where the canvas size does not matter, and otherwise set `paddingPercent` on a 200x200 source (reference 200): `paddingPercent 150` -> 300 px -> 800x800 canvas; keep sampled coordinates inside the padding area and away from the image.
+- `testUnrenderablePresetsReturnNil`: NaN and negative `paddingPercent`, NaN `cornerRadiusPercent`, empty stops.
+- New `testPaddingIsProportionalToTheCapture`: `paddingPercent 10` on 400x200 (reference 300 -> 30 px) and on 4000x2000 (reference 3000 -> 300 px); assert both widths.
+- `CaptureCoordinatorTests`: `solidPreset` uses `paddingPercent: 10, cornerRadiusPercent: 0`; the 8x6 test capture hits the 24 pt floor: expect `pixelWidth + 48` at scale 1 and, in the scale-2 test, `8 + 96` px wide with bounds size `(4 + 48, 3 + 48)`.
+
+**Commit:** "Make background padding, radius and shadow proportional to the capture".
