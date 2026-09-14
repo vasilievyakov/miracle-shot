@@ -42,4 +42,17 @@ final class PreviewTimingTests: XCTestCase {
         let t = PreviewTiming(duration: 1, now: 0)
         XCTAssertEqual(t.remaining(now: 50), 0)
     }
+
+    func testDoubleHoverBeganIsIdempotent() {
+        var t = PreviewTiming(duration: 6, now: 100)
+        t.hoverBegan(now: 104)
+        t.hoverBegan(now: 105)
+        XCTAssertEqual(t.phase, .paused(remaining: 2))
+    }
+
+    func testHoverEndedWithoutHoverBeganIsNoop() {
+        var t = PreviewTiming(duration: 6, now: 100)
+        t.hoverEnded(now: 103)
+        XCTAssertEqual(t.phase, .running(deadline: 106))
+    }
 }
