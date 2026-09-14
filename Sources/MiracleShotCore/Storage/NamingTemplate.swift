@@ -3,6 +3,7 @@ import Foundation
 /// File name pattern with `{date}`, `{time}`, `{app}` and `{seq}` tokens.
 public struct NamingTemplate: Sendable, Equatable, Codable {
     public static let `default` = NamingTemplate(pattern: "Miracle Shot {date} at {time}")
+    /// Maximum length of the base name in UTF-8 bytes, leaving room for the extension under the 255-byte APFS limit.
     public static let maxBaseNameLength = 200
 
     public var pattern: String
@@ -31,8 +32,9 @@ public struct NamingTemplate: Sendable, Equatable, Codable {
             .replacingOccurrences(of: "{app}", with: sanitizedApp.isEmpty ? "Screen" : sanitizedApp)
             .replacingOccurrences(of: "{seq}", with: String(sequence))
         name = Self.sanitize(name)
-        if name.count > Self.maxBaseNameLength {
-            name = String(name.prefix(Self.maxBaseNameLength))
+        // APFS limits a path component to 255 UTF-8 bytes; truncate by bytes, never mid-character.
+        while name.utf8.count > Self.maxBaseNameLength {
+            name.removeLast()
         }
         return "\(name).\(fileExtension)"
     }

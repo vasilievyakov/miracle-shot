@@ -42,7 +42,14 @@ final class NamingTemplateTests: XCTestCase {
     func testVeryLongNameIsTruncated() {
         let t = NamingTemplate(pattern: String(repeating: "a", count: 400))
         let name = t.fileName(date: date, appName: nil, sequence: 1, timeZone: utc)
-        XCTAssertLessThanOrEqual(name.count, 200 + ".png".count)
+        XCTAssertLessThanOrEqual(name.utf8.count, 200 + ".png".utf8.count)
+    }
+
+    func testTruncationCountsBytesAndKeepsCharactersWhole() {
+        let t = NamingTemplate(pattern: String(repeating: "\u{1F4F7}", count: 100))   // 100 x 4-byte camera emoji
+        let name = t.fileName(date: date, appName: nil, sequence: 1, timeZone: utc)
+        XCTAssertLessThanOrEqual(name.utf8.count, 200 + 4)
+        XCTAssertEqual(String(name.dropLast(4)).unicodeScalars.count, 50)
     }
 
     func testCodableRoundTrip() throws {
