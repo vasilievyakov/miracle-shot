@@ -4,14 +4,26 @@ import MiracleShotCore
 /// Shows one transparent panel per screen and resolves the `present` continuation exactly once.
 @MainActor
 public final class SelectionOverlayController: SelectionPresenting {
+    private let capture: CaptureServicing
+    private let windowList: WindowListProviding
     private var panels: [SelectionPanel] = []
     private var continuation: CheckedContinuation<SelectionResult?, Never>?
 
-    public init() {}
+    public init(capture: CaptureServicing, windowList: WindowListProviding) {
+        self.capture = capture
+        self.windowList = windowList
+    }
 
     public func present(mode: CaptureMode) async -> SelectionResult? {
         guard continuation == nil else { return nil }
-        panels = NSScreen.screens.map { SelectionPanel(screen: $0, mode: mode, controller: self) }
+        let windows = windowList.onScreenWindows()
+        var frozen: [CGDirectDisplayID: CGImage] = [:]
+        for screen in NSScreen.screens {
+            if let shot = try? await capture.captureDisplay(screen.displayID) { frozen[screen.displayID] = shot.image }
+        }
+        panels = NSScreen.screens.map {
+            SelectionPanel(screen: $0, mode: mode, controller: self, windows: windows, frozen: frozen[$0.displayID])
+        }
         for panel in panels { panel.orderFrontRegardless() }
         panels.first?.makeKey()
         NSCursor.crosshair.push()

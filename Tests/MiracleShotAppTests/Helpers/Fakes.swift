@@ -42,6 +42,11 @@ func makeCapture() -> Capture {
         if let error { throw error }
         return makeCapture()
     }
+    func captureDisplay(_ displayID: CGDirectDisplayID) async throws -> Capture {
+        log.add("captureDisplay(\(displayID))")
+        if let error { throw error }
+        return makeCapture()
+    }
 }
 
 @MainActor final class FakeSelection: SelectionPresenting {

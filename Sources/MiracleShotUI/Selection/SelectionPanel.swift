@@ -3,7 +3,7 @@ import MiracleShotCore
 
 @MainActor
 final class SelectionPanel: NSPanel {
-    init(screen: NSScreen, mode: CaptureMode, controller: SelectionOverlayController) {
+    init(screen: NSScreen, mode: CaptureMode, controller: SelectionOverlayController, windows: [WindowInfo], frozen: CGImage?) {
         super.init(contentRect: screen.frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         level = .screenSaver
         isOpaque = false
@@ -12,7 +12,7 @@ final class SelectionPanel: NSPanel {
         ignoresMouseEvents = false
         acceptsMouseMovedEvents = true
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-        contentView = SelectionView(screen: screen, mode: mode, controller: controller)
+        contentView = SelectionView(screen: screen, mode: mode, controller: controller, windows: windows, frozen: frozen)
     }
 
     override var canBecomeKey: Bool { true }

@@ -49,11 +49,15 @@ public final class ScreenCaptureService: CaptureServicing {
 
     public func captureDisplayUnderCursor() async throws -> Capture {
         guard let screen = NSScreen.underCursor else { throw CaptureError.displayNotFound }
+        return try await captureDisplay(screen.displayID)
+    }
+
+    public func captureDisplay(_ displayID: CGDirectDisplayID) async throws -> Capture {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-        guard let display = content.displays.first(where: { $0.displayID == screen.displayID }) else {
+        guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
             throw CaptureError.displayNotFound
         }
-        let scale = screen.backingScaleFactor
+        let scale = NSScreen.screen(for: displayID)?.backingScaleFactor ?? 2
         let ownWindows = content.windows.filter { $0.owningApplication?.processID == getpid() }
         let filter = SCContentFilter(display: display, excludingWindows: ownWindows)
         let config = Self.configuration()
