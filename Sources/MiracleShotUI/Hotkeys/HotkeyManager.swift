@@ -2,6 +2,9 @@ import Carbon
 import MiracleShotCore
 
 /// Registers global hotkeys through Carbon and maps them back to `CaptureAction`.
+///
+/// Construct once and keep for the process lifetime: the Carbon handler holds an unretained pointer to this
+/// object and is never removed, so deallocating a manager while hotkeys are registered would be a use-after-free.
 @MainActor
 public final class HotkeyManager {
     public typealias Handler = @MainActor (CaptureAction) -> Void
@@ -17,7 +20,8 @@ public final class HotkeyManager {
         installEventHandler()
     }
 
-    /// Replaces all bindings. Returns the actions whose hotkey could not be registered (already taken by another app).
+    /// Replaces all bindings. Returns the actions whose hotkey could not be registered: taken by another app, or the
+    /// same combination bound to an earlier action in `CaptureAction.allCases` order.
     @discardableResult
     public func register(_ bindings: [CaptureAction: HotkeySpec]) -> [CaptureAction] {
         unregisterAll()
@@ -48,7 +52,7 @@ public final class HotkeyManager {
         var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
         let selfPointer = Unmanaged.passUnretained(self).toOpaque()
         // The C callback cannot capture context; `userData` carries the manager. Carbon delivers on the main thread.
-        InstallEventHandler(GetApplicationEventTarget(), { _, event, userData in
+        let status = InstallEventHandler(GetApplicationEventTarget(), { _, event, userData in
             guard let userData, let event else { return OSStatus(eventNotHandledErr) }
             var hotKeyID = EventHotKeyID()
             let status = GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID),
@@ -58,6 +62,7 @@ public final class HotkeyManager {
             MainActor.assumeIsolated { manager.fire(id: hotKeyID.id) }
             return noErr
         }, 1, &eventType, selfPointer, &eventHandler)
+        assert(status == noErr, "InstallEventHandler failed with status \(status); hotkeys will never fire")
     }
 
     private func fire(id: UInt32) {
