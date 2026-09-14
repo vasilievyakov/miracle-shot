@@ -12,14 +12,27 @@ func draw(size: Int) -> Data {
     let s = CGFloat(size) / 1024
     let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: size, pixelsHigh: size, bitsPerSample: 8,
                                samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
-                               colorSpaceName: .calibratedRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+                               colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+    guard let context = NSGraphicsContext(bitmapImageRep: rep) else {
+        fatalError("could not create a bitmap context for size \(size)")
+    }
     NSGraphicsContext.saveGraphicsState()
-    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+    NSGraphicsContext.current = context
 
-    let plate = NSBezierPath(roundedRect: NSRect(x: 100 * s, y: 100 * s, width: 824 * s, height: 824 * s),
+    // Plate edge snapped to the pixel grid so small tiers get a crisp border instead of a gray ramp.
+    let inset = (100 * s).rounded()
+    let plate = NSBezierPath(roundedRect: NSRect(x: inset, y: inset, width: CGFloat(size) - inset * 2, height: CGFloat(size) - inset * 2),
                              xRadius: 185 * s, yRadius: 185 * s)
     ink.setFill(); plate.fill()
-    line.setStroke(); plate.lineWidth = 6 * s; plate.stroke()
+    line.setStroke(); plate.lineWidth = max(1, 6 * s); plate.stroke()
+
+    // At 16 px the brackets dissolve into noise; keep the plate and a bigger dot, as the HIG suggests for small tiers.
+    if size <= 16 {
+        let dot = NSBezierPath(ovalIn: NSRect(x: CGFloat(size) / 2 - 3, y: CGFloat(size) / 2 - 3, width: 6, height: 6))
+        bone.setFill(); dot.fill()
+        NSGraphicsContext.restoreGraphicsState()
+        return rep.representation(using: .png, properties: [:])!
+    }
 
     let box = NSRect(x: 232 * s, y: 232 * s, width: 560 * s, height: 560 * s)
     let leg = 170 * s

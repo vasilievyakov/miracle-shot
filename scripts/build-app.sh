@@ -21,6 +21,7 @@ for bundle in "$(dirname "$BIN")"/MiracleShot_*.bundle; do
 done
 
 # App icon: drawn by scripts/make-icon.swift so no binary lives in the repo.
+rm -rf build/AppIcon.iconset
 swift scripts/make-icon.swift build/AppIcon.iconset >/dev/null
 iconutil -c icns build/AppIcon.iconset -o "$OUT/Contents/Resources/AppIcon.icns"
 
