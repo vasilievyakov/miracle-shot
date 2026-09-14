@@ -24,8 +24,8 @@ public struct HistoryIndex: Codable, Sendable, Equatable {
     public let limit: Int
 
     public init(limit: Int, entries: [HistoryEntry] = []) {
-        self.limit = limit
-        self.entries = Array(entries.prefix(limit))
+        self.limit = max(0, limit)
+        self.entries = Array(entries.prefix(self.limit))
     }
 
     public mutating func append(_ entry: HistoryEntry) {
@@ -37,6 +37,7 @@ public struct HistoryIndex: Codable, Sendable, Equatable {
         entries.removeAll { $0.id == id }
     }
 
+    /// The `limit` stored in the file is ignored on purpose: the caller's current settings win over a stale value.
     public static func load(from url: URL, limit: Int) -> HistoryIndex {
         let stored = JSONStore.load(HistoryIndex.self, from: url)
         return HistoryIndex(limit: limit, entries: stored?.entries ?? [])

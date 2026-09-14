@@ -2,6 +2,19 @@ import XCTest
 @testable import MiracleShotCore
 
 final class HistoryIndexTests: XCTestCase {
+    private var createdURLs: [URL] = []
+
+    override func tearDown() {
+        createdURLs.forEach { try? FileManager.default.removeItem(at: $0) }
+        createdURLs.removeAll()
+    }
+
+    private func tempURL() -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        createdURLs.append(url)
+        return url
+    }
+
     private func entry(_ n: Int) -> HistoryEntry {
         HistoryEntry(id: UUID(), path: "/tmp/\(n).png", date: Date(timeIntervalSince1970: TimeInterval(n)),
                      width: 10, height: 10, sourceApp: nil)
@@ -29,14 +42,14 @@ final class HistoryIndexTests: XCTestCase {
     }
 
     func testLoadMissingGivesEmptyWithLimit() {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        let url = tempURL()
         let index = HistoryIndex.load(from: url, limit: 7)
         XCTAssertTrue(index.entries.isEmpty)
         XCTAssertEqual(index.limit, 7)
     }
 
     func testSaveAndLoadRoundTrip() throws {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        let url = tempURL()
         var index = HistoryIndex(limit: 5)
         index.append(entry(1))
         try index.save(to: url)
@@ -45,10 +58,17 @@ final class HistoryIndexTests: XCTestCase {
     }
 
     func testLoadAppliesNewLimit() throws {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        let url = tempURL()
         var index = HistoryIndex(limit: 10)
         (1...5).forEach { index.append(entry($0)) }
         try index.save(to: url)
         XCTAssertEqual(HistoryIndex.load(from: url, limit: 2).entries.count, 2)
+    }
+
+    func testNegativeLimitIsClampedToZero() {
+        var index = HistoryIndex(limit: -3)
+        index.append(entry(1))
+        XCTAssertEqual(index.limit, 0)
+        XCTAssertTrue(index.entries.isEmpty)
     }
 }
