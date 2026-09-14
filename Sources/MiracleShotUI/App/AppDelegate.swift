@@ -1,5 +1,6 @@
 import AppKit
 import MiracleShotCore
+import os
 
 @MainActor
 public final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -7,6 +8,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotkeys: HotkeyManager!
     private(set) var coordinator: CaptureCoordinator!
     private let toast = ToastPresenter()
+    private let log = Logger(subsystem: "agency.blackbloom.miracleshot", category: "app")
 
     public override init() {
         super.init()
@@ -29,17 +31,21 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.trigger(action)
         }
         let failed = hotkeys.register(settings.hotkeys)
+        log.info("Hotkeys registered: \(settings.hotkeys.map { "\($0.key.rawValue)=\($0.value.description)" }.joined(separator: ", "), privacy: .public); failed: \(failed.map(\.rawValue), privacy: .public)")
         if !failed.isEmpty {
             toast.post(title: "Some hotkeys are taken",
                        body: failed.map(\.title).joined(separator: ", ") + ". Change them in Settings.", isError: true)
         }
         buildStatusItem(settings: settings)
-        if !CGPreflightScreenCaptureAccess() {
+        let hasPermission = CGPreflightScreenCaptureAccess()
+        log.info("Launched; screen recording permission: \(hasPermission)")
+        if !hasPermission {
             _ = CGRequestScreenCaptureAccess()
         }
     }
 
     private func trigger(_ action: CaptureAction) {
+        log.info("Trigger \(action.rawValue, privacy: .public); screen recording permission: \(CGPreflightScreenCaptureAccess())")
         Task { await coordinator.perform(action) }
     }
 

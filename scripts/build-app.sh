@@ -40,7 +40,15 @@ cat > "$OUT/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-codesign --force --sign - --identifier "$BUNDLE_ID" "$OUT"
+# Prefer the self-signed "Miracle Shot Dev" identity (see scripts/make-signing-cert.sh): its designated requirement
+# is identifier + certificate, so TCC permissions survive rebuilds. Ad-hoc signing binds them to one build's cdhash.
+if security find-identity -v -p codesigning | grep -q "Miracle Shot Dev"; then
+  codesign --force --sign "Miracle Shot Dev" --identifier "$BUNDLE_ID" "$OUT"
+  echo "Signed with Miracle Shot Dev"
+else
+  codesign --force --sign - --identifier "$BUNDLE_ID" "$OUT"
+  echo "Signed ad-hoc (run scripts/make-signing-cert.sh once to keep permissions across rebuilds)"
+fi
 echo "Built $OUT"
 if [ "${1:-}" = "--install" ]; then
   rm -rf "/Applications/$APP_NAME.app"

@@ -2916,7 +2916,7 @@ Run: `scripts/build-app.sh && open "build/Miracle Shot.app"`
 4. `shift+cmd+1` then Escape: overlay disappears, nothing copied. Click without drag: same.
 5. `shift+cmd+0`: the whole display under the cursor is captured without any dimming.
 6. Menu items "Capture Area" and "Capture Full Screen" do the same as the hotkeys.
-7. Rebuild with `scripts/build-app.sh`, relaunch: no new permission prompt.
+7. Rebuild with `scripts/build-app.sh`, relaunch: no new permission prompt. This holds only when the app is signed with the `Miracle Shot Dev` identity (`scripts/make-signing-cert.sh`); with ad-hoc signing TCC binds the grant to the build's cdhash, shows the toggle as on, yet `CGPreflightScreenCaptureAccess()` returns false. After changing the signing identity run `tccutil reset ScreenCapture agency.blackbloom.miracleshot` and grant again.
 8. Quit and run `open "build/Miracle Shot.app"` twice: only one "MS" icon (second launch focuses the first; if two appear, add `LSMultipleInstancesProhibited` to Info.plist in `build-app.sh`).
 
 **Step 6: Commit**

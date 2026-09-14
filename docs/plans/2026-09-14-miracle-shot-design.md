@@ -132,7 +132,7 @@ MiracleShot/
 1. `swift build -c release`;
 2. собирает `build/Miracle Shot.app/Contents/{MacOS,Resources}`;
 3. пишет `Info.plist`: `CFBundleIdentifier = agency.blackbloom.miracleshot`, `LSUIElement = true`, `NSScreenCaptureUsageDescription`, `CFBundleIconFile`;
-4. `codesign --force --sign - --identifier agency.blackbloom.miracleshot` — стабильный ad-hoc identifier, чтобы разрешение Screen Recording не слетало при каждой пересборке;
+4. подпись self-signed сертификатом «Miracle Shot Dev» (`scripts/make-signing-cert.sh`, один раз): designated requirement становится `identifier + certificate leaf`, и разрешение Screen Recording переживает пересборки. Ad-hoc подпись (`--sign -`) дает requirement `cdhash` конкретной сборки, и TCC теряет разрешение после каждого `swift build`, при этом галочка в System Settings остается включенной; после смены подписи нужен `tccutil reset ScreenCapture agency.blackbloom.miracleshot`;
 5. опционально копирует в `/Applications`.
 
 ## 4. Материал
