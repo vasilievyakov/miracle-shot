@@ -1494,12 +1494,12 @@ enum TestImages {
                   bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
     }
 
-    /// Reads one pixel. `y` counts from the top, like screen coordinates.
+    /// Reads one pixel. `y` counts from the top, like screen coordinates. (Implementation on the branch also un-premultiplies alpha.)
     static func pixel(_ image: CGImage, x: Int, y: Int) -> RGBA {
         let ctx = context(width: image.width, height: image.height)
         ctx.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
         let data = ctx.data!.assumingMemoryBound(to: UInt8.self)
-        let row = image.height - 1 - y   // CGContext bitmaps are bottom-up
+        let row = y   // CGBitmapContext buffers are top-down: row 0 is the top scanline
         let i = row * ctx.bytesPerRow + x * 4
         return RGBA(r: data[i], g: data[i + 1], b: data[i + 2], a: data[i + 3])
     }
