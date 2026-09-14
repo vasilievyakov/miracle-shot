@@ -37,4 +37,14 @@ final class ImageCodecTests: XCTestCase {
         let image = TestImages.solid(width: 2, height: 2, r: 1, g: 0, b: 0, a: 0.5)
         TestImages.assertClose(TestImages.pixel(image, x: 0, y: 0), .init(r: 255, g: 0, b: 0, a: 128), tolerance: 3)
     }
+
+    func testThumbnailIsDownsampledKeepingAspect() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".png")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try ImageCodec.writePNG(TestImages.solid(width: 200, height: 100, r: 0, g: 0, b: 1), to: url)
+        let thumb = try XCTUnwrap(ImageCodec.thumbnail(at: url, maxPixelSize: 50))
+        XCTAssertEqual(thumb.width, 50)
+        XCTAssertEqual(thumb.height, 25)
+        TestImages.assertClose(TestImages.pixel(thumb, x: 10, y: 10), .init(r: 0, g: 0, b: 255, a: 255))
+    }
 }

@@ -22,6 +22,17 @@ public enum ImageCodec {
         return CGImageSourceCreateImageAtIndex(source, 0, nil)
     }
 
+    /// Decodes a downsampled image whose longer side is at most `maxPixelSize`; far cheaper than a full decode.
+    public static func thumbnail(at url: URL, maxPixelSize: Int) -> CGImage? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+        ]
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+    }
+
     public enum CodecError: Error { case encodingFailed }
 
     public static func writePNG(_ image: CGImage, to url: URL) throws {
