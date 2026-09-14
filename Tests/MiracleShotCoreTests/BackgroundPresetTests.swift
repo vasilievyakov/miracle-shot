@@ -8,8 +8,8 @@ final class BackgroundPresetTests: XCTestCase {
             id: "sample", name: "Sample",
             fill: .linearGradient(stops: [GradientStop(color: BrandPalette.lime, location: 0),
                                           GradientStop(color: BrandPalette.limeDim, location: 1)], angle: 135),
-            padding: 64, cornerRadius: 12,
-            shadow: BackgroundShadow(blur: 40, offsetY: 16, opacity: 0.5))
+            paddingPercent: 64, cornerRadiusPercent: 12,
+            shadow: BackgroundShadow(blurPercent: 40, offsetPercent: 16, opacity: 0.5))
     }
 
     func testBrandColorEncodesAsHexString() throws {
@@ -25,7 +25,7 @@ final class BackgroundPresetTests: XCTestCase {
     }
 
     func testSolidPresetRoundTripsThroughJSON() throws {
-        let preset = BackgroundPreset(id: "s", name: "S", fill: .solid(color: BrandPalette.ink), padding: 8, cornerRadius: 4, shadow: nil)
+        let preset = BackgroundPreset(id: "s", name: "S", fill: .solid(color: BrandPalette.ink), paddingPercent: 8, cornerRadiusPercent: 4, shadow: nil)
         let data = try JSONEncoder().encode(preset)
         XCTAssertEqual(try JSONDecoder().decode(BackgroundPreset.self, from: data), preset)
     }
@@ -38,7 +38,7 @@ final class BackgroundPresetTests: XCTestCase {
 
     func testSolidFillDecodesFromReadableJSON() throws {
         let json = """
-        {"id":"x","name":"X","fill":{"solid":{"color":"#0b0b0c"}},"padding":10,"cornerRadius":0}
+        {"id":"x","name":"X","fill":{"solid":{"color":"#0b0b0c"}},"paddingPercent":10,"cornerRadiusPercent":0}
         """
         let preset = try JSONDecoder().decode(BackgroundPreset.self, from: Data(json.utf8))
         XCTAssertEqual(preset.fill, .solid(color: BrandPalette.ink))
@@ -50,7 +50,7 @@ final class BackgroundPresetTests: XCTestCase {
         XCTAssertEqual(presets.map(\.id), ["lab-dark", "lime", "bone", "coral"])
         XCTAssertEqual(presets.map(\.name), ["Lab Dark", "Lime", "Bone", "Coral"])
         for preset in presets {
-            XCTAssertGreaterThan(preset.padding, 0, preset.id)
+            XCTAssertGreaterThan(preset.paddingPercent, 0, preset.id)
             XCTAssertNotNil(preset.shadow, preset.id)
         }
     }
@@ -65,7 +65,7 @@ final class BackgroundPresetTests: XCTestCase {
 
     func testPresetWithoutGlowsDecodesToEmptyGlows() throws {
         let json = """
-        {"id":"x","name":"X","fill":{"solid":{"color":"#0b0b0c"}},"padding":10,"cornerRadius":0}
+        {"id":"x","name":"X","fill":{"solid":{"color":"#0b0b0c"}},"paddingPercent":10,"cornerRadiusPercent":0}
         """
         let preset = try JSONDecoder().decode(BackgroundPreset.self, from: Data(json.utf8))
         XCTAssertEqual(preset.glows, [])

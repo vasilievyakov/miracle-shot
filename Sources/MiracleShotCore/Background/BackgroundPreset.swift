@@ -31,16 +31,17 @@ public struct GradientGlow: Codable, Sendable, Equatable {
     }
 }
 
-/// Drop shadow under the screenshot. All values in points; `offsetY` positive moves the shadow down on screen.
+/// Drop shadow under the screenshot. `blurPercent` and `offsetPercent` are percent of the mean side of the
+/// screenshot (the "reference"); `offsetPercent` positive moves the shadow down on screen.
 public struct BackgroundShadow: Codable, Sendable, Equatable {
-    public var blur: Double
-    public var offsetY: Double
+    public var blurPercent: Double
+    public var offsetPercent: Double
     /// Black at this opacity, 0...1.
     public var opacity: Double
 
-    public init(blur: Double, offsetY: Double, opacity: Double) {
-        self.blur = blur
-        self.offsetY = offsetY
+    public init(blurPercent: Double, offsetPercent: Double, opacity: Double) {
+        self.blurPercent = blurPercent
+        self.offsetPercent = offsetPercent
         self.opacity = opacity
     }
 }
@@ -65,10 +66,11 @@ public struct BackgroundPreset: Codable, Sendable, Equatable, Identifiable {
     public var id: String
     public var name: String
     public var fill: Fill
-    /// Space around the screenshot, in points.
-    public var padding: Double
-    /// Radius applied to the screenshot's corners, in points.
-    public var cornerRadius: Double
+    /// Space around the screenshot, as a percent of the mean side of the screenshot (the source's width and
+    /// height, averaged, in pixels).
+    public var paddingPercent: Double
+    /// Radius applied to the screenshot's corners, as a percent of the mean side of the screenshot.
+    public var cornerRadiusPercent: Double
     public var shadow: BackgroundShadow?
     /// Radial spots layered over the base fill. Defaults to none; optional in JSON.
     public var glows: [GradientGlow]
@@ -78,19 +80,19 @@ public struct BackgroundPreset: Codable, Sendable, Equatable, Identifiable {
         fill.colors + glows.map(\.color)
     }
 
-    public init(id: String, name: String, fill: Fill, padding: Double, cornerRadius: Double, shadow: BackgroundShadow?,
+    public init(id: String, name: String, fill: Fill, paddingPercent: Double, cornerRadiusPercent: Double, shadow: BackgroundShadow?,
                 glows: [GradientGlow] = []) {
         self.id = id
         self.name = name
         self.fill = fill
-        self.padding = padding
-        self.cornerRadius = cornerRadius
+        self.paddingPercent = paddingPercent
+        self.cornerRadiusPercent = cornerRadiusPercent
         self.shadow = shadow
         self.glows = glows
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, fill, padding, cornerRadius, shadow, glows
+        case id, name, fill, paddingPercent, cornerRadiusPercent, shadow, glows
     }
 
     public init(from decoder: Decoder) throws {
@@ -98,8 +100,8 @@ public struct BackgroundPreset: Codable, Sendable, Equatable, Identifiable {
         id = try container.decode(String.self, forKey: .id)
         name = try container.decode(String.self, forKey: .name)
         fill = try container.decode(Fill.self, forKey: .fill)
-        padding = try container.decode(Double.self, forKey: .padding)
-        cornerRadius = try container.decode(Double.self, forKey: .cornerRadius)
+        paddingPercent = try container.decode(Double.self, forKey: .paddingPercent)
+        cornerRadiusPercent = try container.decode(Double.self, forKey: .cornerRadiusPercent)
         shadow = try container.decodeIfPresent(BackgroundShadow.self, forKey: .shadow)
         glows = try container.decodeIfPresent([GradientGlow].self, forKey: .glows) ?? []
     }

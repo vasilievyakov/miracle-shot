@@ -10,7 +10,7 @@
     { "color": "#f3f0e8", "x": 0.12, "y": 0.1, "radius": 0.4, "opacity": 0.3 },
     { "color": "#0b0b0c", "x": 0.95, "y": 0.95, "radius": 0.5, "opacity": 0.3 }
   ],
-  "padding": 64,
-  "cornerRadius": 12,
-  "shadow": { "blur": 40, "offsetY": 16, "opacity": 0.5 }
+  "paddingPercent": 8,
+  "cornerRadiusPercent": 1.2,
+  "shadow": { "blurPercent": 5, "offsetPercent": 2, "opacity": 0.5 }
 }
