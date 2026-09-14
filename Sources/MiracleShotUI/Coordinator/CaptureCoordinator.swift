@@ -90,6 +90,20 @@ public final class CaptureCoordinator {
         persistHistory()
     }
 
+    /// Renders `source` on `preset` and pushes the result through the normal finish path, so it is copied, saved,
+    /// listed in history and previewed exactly like a fresh capture. Only meaningful while the preview is up.
+    public func applyBackground(_ preset: BackgroundPreset, to source: Capture) {
+        guard state == .previewing else { return }
+        guard let image = BackgroundRenderer.render(source.image, preset: preset, scale: source.scaleFactor) else {
+            notifications.post(title: "Could not apply background", body: "Rendering \"\(preset.name)\" failed.", isError: true)
+            return
+        }
+        let size = CGSize(width: CGFloat(image.width) / source.scaleFactor, height: CGFloat(image.height) / source.scaleFactor)
+        let shot = Capture(image: image, sourceAppName: source.sourceAppName, sourceWindowTitle: source.sourceWindowTitle,
+                           bounds: CGRect(origin: source.bounds.origin, size: size), scaleFactor: source.scaleFactor)
+        finish(shot)
+    }
+
     // MARK: - Private
 
     private func transition(_ event: CaptureEvent) {
