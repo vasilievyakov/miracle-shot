@@ -1,6 +1,5 @@
 import AppKit
 import MiracleShotCore
-import UniformTypeIdentifiers
 
 /// Thumbnail plus action buttons. Reports hover to the owner and starts a file drag from the thumbnail.
 @MainActor
@@ -94,7 +93,7 @@ final class PreviewContentView: NSView, NSDraggingSource {
             item.setData(png, forType: .png)
         }
         let draggingItem = NSDraggingItem(pasteboardWriter: item)
-        draggingItem.setDraggingFrame(thumbnail.frame, contents: thumbnail.image)
+        draggingItem.setDraggingFrame(thumbnail.convert(thumbnail.bounds, to: self), contents: thumbnail.image)
         beginDraggingSession(with: [draggingItem], event: event, source: self)
     }
 

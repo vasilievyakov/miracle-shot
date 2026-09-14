@@ -80,11 +80,13 @@ public final class QuickPreviewPanel: PreviewPresenting {
         timing = nil
         guard let panel else { return }
         self.panel = nil
-        let finish: @MainActor () -> Void = { [weak self] in
+        // Snapshot and clear now, not in the deferred completion: a `show` that arrives during the fade must not
+        // have its own `onDismiss` fired or its `current` wiped by the previous preview's completion handler.
+        let callback = onDismiss
+        onDismiss = nil
+        current = nil
+        let finish: @MainActor () -> Void = {
             panel.orderOut(nil)
-            let callback = self?.onDismiss
-            self?.onDismiss = nil
-            self?.current = nil
             callback?()
         }
         if animated {

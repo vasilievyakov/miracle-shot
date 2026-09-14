@@ -11,6 +11,7 @@ final class BrandButton: NSButton {
         self.title = title
         self.target = target
         self.action = action
+        translatesAutoresizingMaskIntoConstraints = false
         isBordered = false
         wantsLayer = true
         layer?.backgroundColor = BrandPalette.ink3.cgColor()
@@ -40,6 +41,6 @@ final class BrandButton: NSButton {
         tracking = area
     }
 
-    override func mouseEntered(with event: NSEvent) { setTitleColor(BrandPalette.lime) }
+    override func mouseEntered(with event: NSEvent) { if isEnabled { setTitleColor(BrandPalette.lime) } }
     override func mouseExited(with event: NSEvent) { setTitleColor(BrandPalette.bone) }
 }
