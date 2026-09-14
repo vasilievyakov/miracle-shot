@@ -8,9 +8,6 @@ import Foundation
 /// maps directly, then unflipped again for image patches (blur/pixelate), which are plain pixel copies.
 public enum AnnotationRenderer {
     private static let sRGB = CGColorSpace(name: CGColorSpace.sRGB)!
-    /// Half-angle of the arrowhead, in radians. This is a private, temporary copy of the arrowhead math: Task 2's
-    /// `ArrowGeometry` supersedes it once merged.
-    private static let arrowHalfAngle: CGFloat = 28 * .pi / 180
 
     /// Crop -> annotations -> background. `nil` only if a context cannot be made.
     public static func render(_ document: Document) -> CGImage? {
@@ -77,24 +74,11 @@ public enum AnnotationRenderer {
     // MARK: - Vector shapes
 
     private static func drawArrow(from: CGPoint, to: CGPoint, style: AnnotationStyle, ctx: CGContext) {
-        let dx = to.x - from.x
-        let dy = to.y - from.y
-        let length = (dx * dx + dy * dy).squareRoot()
-        guard length > 0 else { return }
-        let ux = dx / length
-        let uy = dy / length
-        let headLength = max(12, style.lineWidth * 4)
-        let backX = -ux
-        let backY = -uy
-        func rotate(_ vx: CGFloat, _ vy: CGFloat, _ angle: CGFloat) -> CGPoint {
-            CGPoint(x: vx * cos(angle) - vy * sin(angle), y: vx * sin(angle) + vy * cos(angle))
-        }
-        let left = rotate(backX, backY, arrowHalfAngle)
-        let right = rotate(backX, backY, -arrowHalfAngle)
-        let leftPoint = CGPoint(x: to.x + left.x * headLength, y: to.y + left.y * headLength)
-        let rightPoint = CGPoint(x: to.x + right.x * headLength, y: to.y + right.y * headLength)
-        // The base of the head triangle, on the shaft's centerline: where the shaft stops.
-        let shaftEnd = CGPoint(x: to.x - headLength * cos(arrowHalfAngle) * ux, y: to.y - headLength * cos(arrowHalfAngle) * uy)
+        guard from != to else { return }
+        let head = ArrowGeometry.head(from: from, to: to, lineWidth: style.lineWidth)
+        let leftPoint = head.left
+        let rightPoint = head.right
+        let shaftEnd = head.shaftEnd
 
         ctx.setStrokeColor(style.strokeColor.cgColor())
         ctx.setLineWidth(style.lineWidth)

@@ -280,7 +280,7 @@ Implementation notes:
 **Tests (pixel checks with tolerance, small images):**
 - `testRectFillAndStroke`: 100x100 ink source, rect (20,20,40,40) fill lime stroke coral width 4 -> pixel (40,40) lime, (21,40) coral, (10,10) ink.
 - `testCropMovesAnnotationsWithTheImage`: crop (50,50,50,50) and a rect at (60,60,20,20): output is 50x50 and pixel (20,20) is the fill color, (5,5) is the source color.
-- `testArrowHeadFillsAtTheTip`: arrow (10,50)->(90,50) lime width 4 on ink: pixel (85,50) lime, (88,46) lime (inside the head), (50,58) ink.
+- `testArrowHeadFillsAtTheTip`: arrow (10,50)->(90,50) lime width 4 on ink: pixel (85,50) lime, (78,54) and (82,47) lime (inside the head; the head is 16 px long with half-angle 28 degrees, so its base spans y 42.5...57.5 at x 75.9), (50,58) ink.
 - `testEllipseLeavesCornersUntouched`: ellipse (10,10,80,80) fill lime: (50,50) lime, (12,12) ink.
 - `testHighlightMultiplies`: bone source, highlight lime rect: inside pixel darker than bone in the blue channel and greener; outside bone.
 - `testBlurLowersVariance`: source with a sharp checkerboard (8 px squares) in a region; after `.blur(rect, .gaussian)` the variance of the region drops by at least 4x; pixels outside the rect unchanged.
