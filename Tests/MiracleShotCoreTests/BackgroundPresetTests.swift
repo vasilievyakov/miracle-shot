@@ -57,10 +57,25 @@ final class BackgroundPresetTests: XCTestCase {
 
     func testBuiltInPresetsUseOnlyPaletteColors() {
         for preset in BackgroundPresetLibrary.builtIn() {
-            for color in preset.fill.colors {
+            for color in preset.colors {
                 XCTAssertTrue(BrandPalette.all.contains(color), "\(preset.id) uses \(color.hex), not a palette token")
             }
         }
+    }
+
+    func testPresetWithoutGlowsDecodesToEmptyGlows() throws {
+        let json = """
+        {"id":"x","name":"X","fill":{"solid":{"color":"#0b0b0c"}},"padding":10,"cornerRadius":0}
+        """
+        let preset = try JSONDecoder().decode(BackgroundPreset.self, from: Data(json.utf8))
+        XCTAssertEqual(preset.glows, [])
+    }
+
+    func testGlowsRoundTrip() throws {
+        var preset = sample()
+        preset.glows = [GradientGlow(color: BrandPalette.bone, x: 0.1, y: 0.9, radius: 0.4, opacity: 0.5)]
+        let data = try JSONEncoder().encode(preset)
+        XCTAssertEqual(try JSONDecoder().decode(BackgroundPreset.self, from: data), preset)
     }
 
     func testLoadAppendsUserPresetsAndSkipsBrokenFiles() throws {
