@@ -37,6 +37,8 @@ public final class ScreenCaptureService: CaptureServicing {
             let scale = NSScreen.screen(for: displayID)?.backingScaleFactor ?? 2
             let filter = SCContentFilter(desktopIndependentWindow: window)
             let config = Self.configuration()
+            // The default includes the window shadow, which would be squeezed into the frame-sized output.
+            config.ignoreShadowsSingleWindow = true
             config.width = Int((window.frame.width * scale).rounded())
             config.height = Int((window.frame.height * scale).rounded())
             let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
