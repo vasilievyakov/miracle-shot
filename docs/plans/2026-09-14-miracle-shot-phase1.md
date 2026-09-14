@@ -2565,6 +2565,9 @@ Depends on Tasks 9–12. After this task the app is usable for real: `shift+cmd+
 - Create: `Sources/MiracleShotUI/Services/ClipboardService.swift`
 - Create: `Sources/MiracleShotUI/Services/FileSaveService.swift`
 - Create: `Sources/MiracleShotUI/Services/ImmediateDismissPreview.swift`
+- Create: `Sources/MiracleShotCore/Support/CoreResources.swift`
+- Create: `Sources/MiracleShotUI/Support/UIResources.swift`
+- Modify: `Tests/MiracleShotCoreTests/CoreSmokeTests.swift`
 - Create: `Sources/MiracleShotUI/Toast/ToastPresenter.swift`
 - Create: `Sources/MiracleShotUI/App/AppDelegate.swift`
 - Modify: `Sources/MiracleShotApp/main.swift`
@@ -2673,6 +2676,50 @@ public final class ImmediateDismissPreview: PreviewPresenting {
     }
 }
 ```
+
+**Step 2b: Resource bundle locator**
+
+SwiftPM's generated `Bundle.module` looks for `MiracleShot_<Target>.bundle` next to the executable or at a build-time absolute path under `.build/`; inside a packaged `.app` neither exists (the script puts bundles in `Contents/Resources`), and copying them to the app root would break code signing ("unsealed contents"). Every bundled resource must therefore go through these locators, never through `Bundle.module` directly.
+
+`Sources/MiracleShotCore/Support/CoreResources.swift`:
+```swift
+import Foundation
+
+/// Locates this target's resource bundle both when running from `swift run`/tests and from the packaged app.
+public enum CoreResources {
+    public static let bundle: Bundle = {
+        if let url = Bundle.main.resourceURL?.appendingPathComponent("MiracleShot_MiracleShotCore.bundle"),
+           let bundle = Bundle(url: url) {
+            return bundle
+        }
+        return Bundle.module
+    }()
+}
+```
+
+`Sources/MiracleShotUI/Support/UIResources.swift`:
+```swift
+import Foundation
+
+public enum UIResources {
+    public static let bundle: Bundle = {
+        if let url = Bundle.main.resourceURL?.appendingPathComponent("MiracleShot_MiracleShotUI.bundle"),
+           let bundle = Bundle(url: url) {
+            return bundle
+        }
+        return Bundle.module
+    }()
+}
+```
+
+Add to `Tests/MiracleShotCoreTests/CoreSmokeTests.swift`:
+```swift
+    func testCoreResourceBundleContainsPresetsFolder() {
+        XCTAssertNotNil(CoreResources.bundle.url(forResource: "presets", withExtension: nil))
+    }
+```
+
+Add to the manual check of this task: `rm -rf .build && scripts/build-app.sh && open "build/Miracle Shot.app"` must launch without a crash (the `.build` fallback path no longer exists, so a wrong locator would `fatalError` on the first resource access once Phase 2 loads presets).
 
 **Step 3: Implement the toast**
 
