@@ -25,6 +25,12 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         preview.handlers[.reveal] = { _, url in
             if let url { NSWorkspace.shared.activateFileViewerSelecting([url]) }
         }
+        preview.backgroundPresets = BackgroundPresetLibrary.load(
+            userDirectory: Settings.supportDirectory.appendingPathComponent("presets", isDirectory: true))
+        preview.onApplyBackground = { [weak self] capture, _, preset in
+            self?.coordinator.applyBackground(preset, to: capture)
+        }
+        log.info("Background presets: \(self.preview.backgroundPresets.map(\.id).joined(separator: ", "), privacy: .public)")
 
         let captureService = ScreenCaptureService()
         coordinator = CaptureCoordinator(

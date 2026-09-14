@@ -91,7 +91,7 @@ MiracleShot/
 Редактор:
 - `Annotation` — enum с associated values: `arrow`, `rect`, `ellipse`, `line`, `freehand`, `text`, `step`, `blur`, `highlight`. У каждой `id: UUID`, `style: AnnotationStyle`.
 - `AnnotationStyle` — `strokeColor`, `fillColor?`, `lineWidth`, `fontName`, `fontSize`.
-- `BackgroundPreset` — `Codable`: `id`, `name`, `fill` (`solid` / `linearGradient` / `image`), `padding`, `cornerRadius`, `shadow`.
+- `BackgroundPreset` — `Codable`: `id`, `name`, `fill` (`solid` / `linearGradient`; `image` отложен), `padding`, `cornerRadius`, `shadow` — все в пойнтах, рендер умножает на `scaleFactor` захвата. `BackgroundRenderer.render(_:preset:scale:)` — единый путь для превью, буфера и будущего редактора. Встроенные пресеты Lab Dark, Lime, Bone, Coral — только цвета палитры. Фон применяется только по кнопке `Background` в превью (решение пользователя, не автоматически) и проходит обычный путь `finish`: буфер, файл, история, новое превью.
 - `Document` — `source: CGImage`, `annotations: [Annotation]`, `background: BackgroundPreset?`, `cropRect: CGRect?`.
 - `AnnotationRenderer` — `render(_ document: Document) -> CGImage`. Один путь для превью и экспорта. Blur/pixelate через CoreImage.
 - `UndoStack<T>` — массив снимков, `push`, `undo`, `redo`, ограничение глубины.

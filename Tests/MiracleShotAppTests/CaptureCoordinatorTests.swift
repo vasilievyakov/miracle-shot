@@ -193,11 +193,28 @@ final class CaptureCoordinatorTests: XCTestCase {
         XCTAssertEqual(sut.lastCapture?.pixelWidth, source.pixelWidth + 20)
     }
 
-    func testApplyBackgroundIsIgnoredWhenNotPreviewing() {
-        let source = makeCapture()
-        sut.applyBackground(solidPreset, to: source)
-        XCTAssertTrue(log.entries.isEmpty)
+    func testApplyBackgroundIsIgnoredWhileSelecting() async {
+        selection.hold = true
+        let task = Task { await sut.perform(.captureArea) }
+        await Task.yield()
+        XCTAssertEqual(sut.state, .selecting(.area))
+        sut.applyBackground(solidPreset, to: makeCapture())
+        XCTAssertFalse(log.entries.contains("copy"))
+        selection.result = nil
+        selection.resume()
+        await task.value
+    }
+
+    /// Hotkey during the preview, then Esc: the panel is still on screen while the state is idle again.
+    func testApplyBackgroundWorksAfterCancelledCaptureLeftThePanelUp() async {
+        await sut.perform(.captureArea)
+        selection.result = nil
+        await sut.perform(.captureArea)
         XCTAssertEqual(sut.state, .idle)
+        log.entries.removeAll()
+        sut.applyBackground(solidPreset, to: makeCapture())
+        XCTAssertEqual(log.entries.first, "copy")
+        XCTAssertEqual(log.entries.last, "preview")
     }
 
     func testApplyBackgroundScalesPaddingByCaptureScale() async {

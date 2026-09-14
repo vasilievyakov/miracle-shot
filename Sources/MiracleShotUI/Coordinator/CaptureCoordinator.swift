@@ -91,9 +91,10 @@ public final class CaptureCoordinator {
     }
 
     /// Renders `source` on `preset` and pushes the result through the normal finish path, so it is copied, saved,
-    /// listed in history and previewed exactly like a fresh capture. Only meaningful while the preview is up.
+    /// listed in history and previewed exactly like a fresh capture. The panel stays visible after a hotkey is
+    /// cancelled with Esc (state back to idle), so idle counts as well; only a capture in flight is refused.
     public func applyBackground(_ preset: BackgroundPreset, to source: Capture) {
-        guard state == .previewing else { return }
+        guard state.canStartCapture else { return }
         guard let image = BackgroundRenderer.render(source.image, preset: preset, scale: source.scaleFactor) else {
             notifications.post(title: "Could not apply background", body: "Rendering \"\(preset.name)\" failed.", isError: true)
             return
