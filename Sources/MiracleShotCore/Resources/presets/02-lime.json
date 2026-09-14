@@ -3,8 +3,13 @@
   "name": "Lime",
   "fill": { "linearGradient": { "angle": 135, "stops": [
     { "color": "#d4ff3f", "location": 0 },
+    { "color": "#d4ff3f", "location": 0.45 },
     { "color": "#9bbf2a", "location": 1 }
   ] } },
+  "glows": [
+    { "color": "#f3f0e8", "x": 0.12, "y": 0.1, "radius": 0.45, "opacity": 0.35 },
+    { "color": "#9bbf2a", "x": 0.95, "y": 0.95, "radius": 0.5, "opacity": 0.5 }
+  ],
   "padding": 64,
   "cornerRadius": 12,
   "shadow": { "blur": 40, "offsetY": 16, "opacity": 0.35 }

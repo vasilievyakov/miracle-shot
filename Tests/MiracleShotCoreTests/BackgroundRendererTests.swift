@@ -102,4 +102,51 @@ final class BackgroundRendererTests: XCTestCase {
         TestImages.assertClose(TestImages.pixel(out, x: 24, y: 14), red)
         TestImages.assertClose(TestImages.pixel(out, x: 25, y: 15), lime)
     }
+
+    func testGradientBlendsPerceptually() throws {
+        // Coral to ink2 through sRGB dips into brown; through OKLab the midpoint stays on the straight Lab line.
+        let fill = BackgroundPreset.Fill.linearGradient(stops: [GradientStop(color: BrandPalette.coral, location: 0),
+                                                                GradientStop(color: BrandPalette.ink2, location: 1)], angle: 90)
+        let out = try XCTUnwrap(BackgroundRenderer.render(source(2, 2), preset: preset(fill: fill, padding: 100), scale: 1))
+        let p = TestImages.pixel(out, x: out.width / 2, y: 5)
+        let got = OKLab.from(BrandColor(red: CGFloat(p.r) / 255, green: CGFloat(p.g) / 255, blue: CGFloat(p.b) / 255))
+        let want = OKLab.mix(OKLab.from(BrandPalette.coral), OKLab.from(BrandPalette.ink2), 0.5)
+        XCTAssertEqual(got.l, want.l, accuracy: 0.02)
+        XCTAssertEqual(got.a, want.a, accuracy: 0.02)
+        XCTAssertEqual(got.b, want.b, accuracy: 0.02)
+    }
+
+    func testSubtleDarkGradientIsDitheredNotBanded() throws {
+        let fill = BackgroundPreset.Fill.linearGradient(stops: [GradientStop(color: BrandPalette.ink, location: 0),
+                                                                GradientStop(color: BrandPalette.ink2, location: 1)], angle: 90)
+        let out = try XCTUnwrap(BackgroundRenderer.render(source(2, 2), preset: preset(fill: fill, padding: 300), scale: 1))
+        // A horizontal ramp of 9 levels over 600 px: without dither every column is one flat value.
+        var columnsWithNoise = 0
+        for x in stride(from: 10, to: 290, by: 20) {
+            let values = Set((0..<200).map { TestImages.pixel(out, x: x, y: $0).r })
+            XCTAssertLessThanOrEqual(values.count, 3, "dither must stay within one level")
+            if values.count >= 2 { columnsWithNoise += 1 }
+        }
+        XCTAssertGreaterThanOrEqual(columnsWithNoise, 8)
+        // The ramp still runs left to right on average.
+        func mean(_ x: Int) -> Double { (0..<200).map { Double(TestImages.pixel(out, x: x, y: $0).r) }.reduce(0, +) / 200 }
+        XCTAssertLessThan(mean(20), mean(280))
+    }
+
+    func testGlowBrightensAroundItsCenter() throws {
+        let glow = GradientGlow(color: BrandPalette.lime, x: 0.2, y: 0.2, radius: 0.3, opacity: 1)
+        var p = preset(fill: .solid(color: BrandPalette.ink), padding: 100)
+        p.glows = [glow]
+        let out = try XCTUnwrap(BackgroundRenderer.render(source(2, 2), preset: p, scale: 1))
+        let near = TestImages.pixel(out, x: Int(0.2 * Double(out.width)), y: Int(0.2 * Double(out.height)))
+        let far = TestImages.pixel(out, x: out.width - 5, y: out.height - 5)
+        XCTAssertGreaterThan(near.g, 200)
+        TestImages.assertClose(far, TestImages.RGBA(r: 0x0b, g: 0x0b, b: 0x0c, a: 255), tolerance: 2)
+    }
+
+    func testUnrenderableGlowReturnsNil() {
+        var p = preset(fill: .solid(color: BrandPalette.ink))
+        p.glows = [GradientGlow(color: BrandPalette.lime, x: 2, y: 0, radius: 0.3, opacity: 1)]
+        XCTAssertNil(BackgroundRenderer.render(source(), preset: p, scale: 1))
+    }
 }
