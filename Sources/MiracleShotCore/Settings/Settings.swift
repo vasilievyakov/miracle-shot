@@ -1,6 +1,7 @@
 import Foundation
 
-/// Persisted user settings. Every field has a default so older files keep loading when fields are added.
+/// Persisted user settings. Missing fields fall back to defaults so older files keep loading when fields are added;
+/// a field with the wrong type fails the whole decode, and `JSONStore` then quarantines the file and returns `.default`.
 public struct Settings: Codable, Sendable, Equatable {
     public var hotkeys: [CaptureAction: HotkeySpec]
     public var saveDirectoryPath: String
@@ -54,8 +55,12 @@ public struct Settings: Codable, Sendable, Equatable {
         .urls(for: .picturesDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("Miracle Shot", isDirectory: true)
 
+    /// Absolute folder to save into. A relative or empty path would resolve against the process working directory,
+    /// so it falls back to `fallbackSaveDirectory` instead.
     public var saveDirectoryURL: URL {
-        URL(fileURLWithPath: (saveDirectoryPath as NSString).expandingTildeInPath, isDirectory: true)
+        let expanded = (saveDirectoryPath as NSString).expandingTildeInPath
+        guard expanded.hasPrefix("/") else { return Self.fallbackSaveDirectory }
+        return URL(fileURLWithPath: expanded, isDirectory: true)
     }
 
     // MARK: Persistence
