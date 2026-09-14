@@ -18,7 +18,7 @@ final class BrandButton: NSButton {
         layer?.cornerRadius = 6
         layer?.borderWidth = 1
         layer?.borderColor = BrandPalette.line.cgColor()
-        font = .systemFont(ofSize: 12, weight: .medium)
+        font = BrandFont.text(size: 12, weight: 500)
         setTitleColor(BrandPalette.bone)
         focusRingType = .none
         heightAnchor.constraint(equalToConstant: 26).isActive = true
@@ -29,7 +29,7 @@ final class BrandButton: NSButton {
 
     private func setTitleColor(_ color: BrandColor) {
         attributedTitle = NSAttributedString(string: title, attributes: [
-            .foregroundColor: color.nsColor(), .font: font ?? .systemFont(ofSize: 12, weight: .medium),
+            .foregroundColor: color.nsColor(), .font: font ?? BrandFont.text(size: 12, weight: 500),
         ])
     }
 

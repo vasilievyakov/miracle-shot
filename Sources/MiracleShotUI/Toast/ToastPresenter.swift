@@ -16,10 +16,10 @@ public final class ToastPresenter: NotificationPosting {
 
         let width: CGFloat = 320
         let titleLabel = NSTextField(labelWithString: title)
-        titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+        titleLabel.font = BrandFont.text(size: 13, weight: 600)
         titleLabel.textColor = BrandPalette.bone.nsColor()
         let bodyLabel = NSTextField(wrappingLabelWithString: body)
-        bodyLabel.font = .systemFont(ofSize: 12)
+        bodyLabel.font = BrandFont.text(size: 12)
         bodyLabel.textColor = BrandPalette.boneDim.nsColor()
         bodyLabel.preferredMaxLayoutWidth = width - 32
 

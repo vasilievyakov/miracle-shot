@@ -154,7 +154,7 @@ final class SelectionView: NSView {
     private func drawSizeLabel(for cgRect: CGRect, near viewRect: NSRect) {
         let text = "\(Int(cgRect.width)) × \(Int(cgRect.height))"
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium),
+            .font: BrandFont.mono(size: 11, weight: 500),
             .foregroundColor: BrandPalette.bone.nsColor(),
         ]
         let size = (text as NSString).size(withAttributes: attrs)
