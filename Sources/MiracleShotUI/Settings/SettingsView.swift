@@ -16,20 +16,30 @@ final class SettingsModel: ObservableObject {
         self.hotkeyText = Dictionary(uniqueKeysWithValues: CaptureAction.allCases.map { ($0, settings.hotkeys[$0]?.description ?? "") })
     }
 
+    /// Errors are shown only after a failed commit (Return), not while typing.
+    @Published private(set) var hotkeyErrors: [CaptureAction: String] = [:]
+
     func hotkeyError(for action: CaptureAction) -> String? {
-        let text = hotkeyText[action] ?? ""
-        if text.isEmpty { return nil }
-        return HotkeySpec(parsing: text) == nil ? "Use modifiers plus a key, e.g. shift+cmd+4" : nil
+        hotkeyErrors[action]
     }
 
     func commitHotkey(for action: CaptureAction) {
         let text = hotkeyText[action] ?? ""
         if text.isEmpty {
             settings.hotkeys.removeValue(forKey: action)
+            hotkeyErrors[action] = nil
         } else if let spec = HotkeySpec(parsing: text) {
             settings.hotkeys[action] = spec
             hotkeyText[action] = spec.description
+            hotkeyErrors[action] = nil
+        } else {
+            hotkeyErrors[action] = "Use modifiers plus a key, e.g. shift+cmd+4"
         }
+    }
+
+    /// Applies every pending hotkey field, for example when the window closes without Return.
+    func commitAllHotkeys() {
+        CaptureAction.allCases.forEach { commitHotkey(for: $0) }
     }
 
     var namingExample: String {

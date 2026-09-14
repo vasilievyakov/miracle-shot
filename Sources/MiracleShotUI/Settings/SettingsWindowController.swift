@@ -15,7 +15,8 @@ public final class SettingsWindowController {
 
     public func show(settings: Settings) {
         if let window {
-            model?.settings = settings
+            // Only push in a different value; reassigning an equal one would echo `onChange` back to the app for nothing.
+            if let model, model.settings != settings { model.settings = settings }
             NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
             return
@@ -28,6 +29,9 @@ public final class SettingsWindowController {
         window.styleMask = [.titled, .closable]
         window.isReleasedWhenClosed = false
         window.center()
+        NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { _ in
+            Task { @MainActor [weak model] in model?.commitAllHotkeys() }
+        }
         self.window = window
         self.model = model
         NSApp.activate(ignoringOtherApps: true)
