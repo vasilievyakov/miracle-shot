@@ -1064,3 +1064,230 @@ git commit -m "Wire background presets into the preview"
 ```
 
 Then on master: `git tag phase-2a-complete`.
+
+---
+
+### Task 8: High-quality gradients (perceptual interpolation, dithering, glows)
+
+User feedback after the first build: "make all backgrounds high-quality gradients". Two-stop sRGB gradients look flat (Lab Dark reads as a solid) and blend through muddy midtones (Coral to ink2 goes brown); subtle dark gradients band at 8 bits.
+
+**Files:**
+- Create: `Sources/MiracleShotCore/Brand/OKLab.swift`
+- Modify: `Sources/MiracleShotCore/Background/BackgroundPreset.swift` (add `GradientGlow`, `glows`, custom decoder with default)
+- Modify: `Sources/MiracleShotCore/Background/BackgroundRenderer.swift` (fill rendered in 16 bit, OKLab-expanded stops, glows, dithered to 8 bit)
+- Modify: `Sources/MiracleShotCore/Resources/presets/*.json` (all four redesigned)
+- Test: `Tests/MiracleShotCoreTests/OKLabTests.swift`, `Tests/MiracleShotCoreTests/BackgroundRendererTests.swift`, `Tests/MiracleShotCoreTests/BackgroundPresetTests.swift`
+
+**Step 1: OKLab (failing tests first)**
+
+`Tests/MiracleShotCoreTests/OKLabTests.swift`:
+
+```swift
+import XCTest
+@testable import MiracleShotCore
+
+final class OKLabTests: XCTestCase {
+    func testBlackAndWhiteAnchorLightness() {
+        XCTAssertEqual(OKLab.from(BrandColor(red: 0, green: 0, blue: 0)).l, 0, accuracy: 1e-4)
+        XCTAssertEqual(OKLab.from(BrandColor(red: 1, green: 1, blue: 1)).l, 1, accuracy: 1e-3)
+    }
+
+    func testMidGrayIsPerceptuallyAboveHalf() {
+        // sRGB 50 percent gray sits near L = 0.6 in OKLab, not 0.5: that is the whole point of the space.
+        let l = OKLab.from(BrandColor(hex: "#808080")!).l
+        XCTAssertEqual(l, 0.6, accuracy: 0.02)
+    }
+
+    func testRoundTripsPaletteColors() {
+        for color in BrandPalette.all {
+            let back = OKLab.from(color).toSRGB()
+            XCTAssertEqual(back.red, color.red, accuracy: 0.002, color.hex)
+            XCTAssertEqual(back.green, color.green, accuracy: 0.002, color.hex)
+            XCTAssertEqual(back.blue, color.blue, accuracy: 0.002, color.hex)
+        }
+    }
+
+    func testMixIsLinearInLab() {
+        let a = OKLab.from(BrandPalette.coral), b = OKLab.from(BrandPalette.ink2)
+        let mid = OKLab.mix(a, b, 0.5)
+        XCTAssertEqual(mid.l, (a.l + b.l) / 2, accuracy: 1e-9)
+        XCTAssertEqual(mid.a, (a.a + b.a) / 2, accuracy: 1e-9)
+    }
+
+    func testToSRGBClampsOutOfGamut() {
+        let hot = OKLab(l: 1.2, a: 0.4, b: 0.4).toSRGB()
+        XCTAssertLessThanOrEqual(hot.red, 1)
+        XCTAssertGreaterThanOrEqual(hot.blue, 0)
+    }
+}
+```
+
+`Sources/MiracleShotCore/Brand/OKLab.swift`:
+
+```swift
+import CoreGraphics
+import Foundation
+
+/// Bjorn Ottosson's OKLab: a perceptual space where straight-line blends stay clean (no gray or brown dip
+/// halfway between two saturated colors). Used only to build gradient stops; storage stays sRGB.
+public struct OKLab: Sendable, Equatable {
+    public var l: Double
+    public var a: Double
+    public var b: Double
+
+    public init(l: Double, a: Double, b: Double) {
+        self.l = l
+        self.a = a
+        self.b = b
+    }
+
+    public static func from(_ color: BrandColor) -> OKLab {
+        let r = linear(color.red), g = linear(color.green), bl = linear(color.blue)
+        let l_ = cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * bl)
+        let m_ = cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * bl)
+        let s_ = cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * bl)
+        return OKLab(l: 0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_,
+                     a: 1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_,
+                     b: 0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086757660 * s_)
+    }
+
+    /// Back to gamma-encoded sRGB, clamped to the gamut.
+    public func toSRGB() -> BrandColor {
+        let l_ = l + 0.3963377774 * a + 0.2158037573 * b
+        let m_ = l - 0.1055613458 * a - 0.0638541728 * b
+        let s_ = l - 0.0894841775 * a - 1.2914855480 * b
+        let l3 = l_ * l_ * l_, m3 = m_ * m_ * m_, s3 = s_ * s_ * s_
+        let r = 4.0767416621 * l3 - 3.3077115913 * m3 + 0.2309699292 * s3
+        let g = -1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3
+        let bl = -0.0041960863 * l3 - 0.7034186147 * m3 + 1.7076147010 * s3
+        return BrandColor(red: gamma(r), green: gamma(g), blue: gamma(bl))
+    }
+
+    public static func mix(_ x: OKLab, _ y: OKLab, _ t: Double) -> OKLab {
+        OKLab(l: x.l + (y.l - x.l) * t, a: x.a + (y.a - x.a) * t, b: x.b + (y.b - x.b) * t)
+    }
+
+    // MARK: - sRGB transfer function
+
+    private static func linear(_ c: CGFloat) -> Double {
+        let v = Double(c)
+        return v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4)
+    }
+
+    private func gamma(_ v: Double) -> CGFloat {
+        let c = min(1, max(0, v))
+        return CGFloat(c <= 0.0031308 ? c * 12.92 : 1.055 * pow(c, 1 / 2.4) - 0.055)
+    }
+}
+```
+
+Run `swift test --filter OKLabTests`: fails to compile, then passes after adding the file.
+
+**Step 2: Model — glows**
+
+In `BackgroundPreset.swift` add:
+
+```swift
+/// A soft radial spot of one palette color over the base fill; a few of them give the layered "mesh" look.
+public struct GradientGlow: Codable, Sendable, Equatable {
+    public var color: BrandColor
+    /// Center in unit canvas coordinates: (0, 0) top-left, (1, 1) bottom-right.
+    public var x: Double
+    public var y: Double
+    /// Radius as a fraction of the canvas diagonal.
+    public var radius: Double
+    /// Opacity at the center, fading to zero at the radius.
+    public var opacity: Double
+
+    public init(color: BrandColor, x: Double, y: Double, radius: Double, opacity: Double) { ... }
+}
+```
+
+`BackgroundPreset` gains `public var glows: [GradientGlow]` (init parameter with default `[]`, placed after `fill`). Keep synthesized `encode`; write `init(from decoder:)` by hand so `glows` is optional in JSON (`decodeIfPresent ... ?? []`), everything else decoded as before. `Fill.colors` stays; add `public var colors: [BrandColor]` on the preset = `fill.colors + glows.map(\.color)` and switch `testBuiltInPresetsUseOnlyPaletteColors` to it.
+
+Tests in `BackgroundPresetTests`:
+- `testPresetWithoutGlowsDecodesToEmptyGlows` (the existing readable JSON has no `glows`).
+- `testGlowsRoundTrip` (a preset with one glow encodes and decodes equal).
+
+**Step 3: Renderer**
+
+Replace the fill path in `BackgroundRenderer` with a dedicated high-quality pass:
+
+```swift
+    /// The fill is drawn in 16 bits per channel (base gradient with OKLab-expanded stops, then the glows) and
+    /// quantized to 8 bits with triangular dither, so subtle dark ramps do not band and blends stay clean.
+    static func fillImage(_ preset: BackgroundPreset, width: Int, height: Int) -> CGImage?
+```
+
+- 16-bit context: `CGContext(data: nil, width:, height:, bitsPerComponent: 16, bytesPerRow: 0, space: sRGB, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder16Little.rawValue)`.
+- Base fill: `.solid` fills; `.linearGradient` expands the stops to `gradientSamples = 48` evenly spaced colors: for each t, find the surrounding stops (sorted by location, clamped at the ends), `OKLab.mix` them, `toSRGB()`. Single stop = solid. Then `CGGradient(colorsSpace:colors:locations:)` with the 48 samples and the same start/end geometry as today.
+- Glows: for each glow, center = (x * width, (1 - y) * height) (CG is y-up), radius = glow.radius * hypot(width, height); 24 samples of the glow color with alpha `opacity * (1 - smoothstep(t))` where `smoothstep(t) = t * t * (3 - 2 * t)`; `drawRadialGradient(gradient, startCenter: c, startRadius: 0, endCenter: c, endRadius: r, options: [])`.
+- Dither to 8 bits: read the 16-bit buffer (`ctx.data`, `bytesPerRow`, components are `UInt16` little-endian, premultiplied but the fill is opaque so alpha is 65535), write an 8-bit premultipliedLast buffer: `v8 = clamp(round(v16 / 257 + noise))` with `noise` triangular in (-0.5, 0.5): `noise = (hash(x, y, channel) + hash(x + 1, y, channel)) / 2 - 0.5` using a cheap integer hash mapped to 0..<1. Deterministic, no randomness in tests. Build the 8-bit `CGImage` from the buffer with `CGDataProvider` (sRGB, premultipliedLast, 8 bpc).
+- `render` draws `fillImage` into the canvas instead of calling `draw(fill)`; `swatch` uses it too (small sizes are fine). Keep `draw(_:in:ctx:)` only if still needed; otherwise remove it.
+- `isRenderable` also checks glows: finite values, `0...1` for x, y, opacity, radius > 0 and finite.
+
+Tests in `BackgroundRendererTests` (add; keep the existing ones passing):
+
+```swift
+    func testGradientBlendsPerceptually() throws {
+        // Coral to ink2 through sRGB dips into brown; through OKLab the midpoint stays on the straight Lab line.
+        let fill = BackgroundPreset.Fill.linearGradient(stops: [GradientStop(color: BrandPalette.coral, location: 0),
+                                                                GradientStop(color: BrandPalette.ink2, location: 1)], angle: 90)
+        let out = try XCTUnwrap(BackgroundRenderer.render(source(2, 2), preset: preset(fill: fill, padding: 100), scale: 1))
+        let p = TestImages.pixel(out, x: out.width / 2, y: 5)
+        let got = OKLab.from(BrandColor(red: CGFloat(p.r) / 255, green: CGFloat(p.g) / 255, blue: CGFloat(p.b) / 255))
+        let want = OKLab.mix(OKLab.from(BrandPalette.coral), OKLab.from(BrandPalette.ink2), 0.5)
+        XCTAssertEqual(got.l, want.l, accuracy: 0.02)
+        XCTAssertEqual(got.a, want.a, accuracy: 0.02)
+        XCTAssertEqual(got.b, want.b, accuracy: 0.02)
+    }
+
+    func testSubtleDarkGradientIsDitheredNotBanded() throws {
+        let fill = BackgroundPreset.Fill.linearGradient(stops: [GradientStop(color: BrandPalette.ink, location: 0),
+                                                                GradientStop(color: BrandPalette.ink2, location: 1)], angle: 90)
+        let out = try XCTUnwrap(BackgroundRenderer.render(source(2, 2), preset: preset(fill: fill, padding: 300), scale: 1))
+        // A horizontal ramp of 9 levels over 600 px: without dither every column is one flat value.
+        var columnsWithNoise = 0
+        for x in stride(from: 10, to: 290, by: 20) {
+            let values = Set((0..<200).map { TestImages.pixel(out, x: x, y: $0).r })
+            XCTAssertLessThanOrEqual(values.count, 3, "dither must stay within one level")
+            if values.count >= 2 { columnsWithNoise += 1 }
+        }
+        XCTAssertGreaterThanOrEqual(columnsWithNoise, 8)
+        // The ramp still runs left to right on average.
+        func mean(_ x: Int) -> Double { (0..<200).map { Double(TestImages.pixel(out, x: x, y: $0).r) }.reduce(0, +) / 200 }
+        XCTAssertLessThan(mean(20), mean(280))
+    }
+
+    func testGlowBrightensAroundItsCenter() throws {
+        let glow = GradientGlow(color: BrandPalette.lime, x: 0.2, y: 0.2, radius: 0.3, opacity: 1)
+        var p = preset(fill: .solid(color: BrandPalette.ink), padding: 100)
+        p.glows = [glow]
+        let out = try XCTUnwrap(BackgroundRenderer.render(source(2, 2), preset: p, scale: 1))
+        let near = TestImages.pixel(out, x: Int(0.2 * Double(out.width)), y: Int(0.2 * Double(out.height)))
+        let far = TestImages.pixel(out, x: out.width - 5, y: out.height - 5)
+        XCTAssertGreaterThan(near.g, 200)
+        TestImages.assertClose(far, TestImages.RGBA(r: 0x0b, g: 0x0b, b: 0x0c, a: 255), tolerance: 2)
+    }
+
+    func testUnrenderableGlowReturnsNil() {
+        var p = preset(fill: .solid(color: BrandPalette.ink))
+        p.glows = [GradientGlow(color: BrandPalette.lime, x: 2, y: 0, radius: 0.3, opacity: 1)]
+        XCTAssertNil(BackgroundRenderer.render(source(), preset: p, scale: 1))
+    }
+```
+
+Note for `testGradientBlendsPerceptually`: the sampled pixel sits at the horizontal center of a 90 degree gradient, i.e. t = 0.5. The dither adds at most half a level, well inside the 0.02 tolerance.
+
+**Step 4: Presets** (palette only; hex tokens: ink `#0b0b0c`, ink2 `#141416`, ink3 `#1c1c1f`, bone `#f3f0e8`, boneDim `#b8b4a8`, boneFaint `#6f6c63`, lime `#d4ff3f`, limeDim `#9bbf2a`, coral `#ff5a36`, line `#2a2a2d`)
+
+`01-lab-dark.json`: gradient angle 160, stops line@0, ink3@0.35, ink@1; glows: lime x 0.85 y 0.12 r 0.45 op 0.16; limeDim x 0.08 y 0.92 r 0.4 op 0.08. Shadow blur 48 offsetY 20 opacity 0.7.
+`02-lime.json`: angle 135, stops lime@0, lime@0.45, limeDim@1; glows: bone x 0.12 y 0.1 r 0.45 op 0.35; limeDim x 0.95 y 0.95 r 0.5 op 0.5. Shadow 40/16/0.35.
+`03-bone.json`: angle 135, stops bone@0, bone@0.4, boneDim@1; glows: bone x 0.15 y 0.12 r 0.5 op 0.7; boneFaint x 0.92 y 0.95 r 0.5 op 0.25. Shadow 40/16/0.25.
+`04-coral.json`: angle 135, stops coral@0, coral@0.55, ink2@1; glows: bone x 0.12 y 0.1 r 0.4 op 0.3; ink x 0.95 y 0.95 r 0.5 op 0.45. Shadow 40/16/0.5.
+
+Padding 64, corner radius 12 everywhere.
+
+**Step 5: Full suite, commit**
+
+`swift test` green (existing renderer tests must still pass unchanged). Commit: "Render backgrounds in 16 bit with OKLab stops, dithering and glows".
