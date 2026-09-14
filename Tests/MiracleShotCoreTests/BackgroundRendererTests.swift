@@ -188,10 +188,10 @@ final class BackgroundRendererTests: XCTestCase {
         // 400x200 source: reference 300, paddingPercent 10 -> 30 px padding -> width 400+60=460.
         let small = try XCTUnwrap(BackgroundRenderer.render(source(400, 200), preset: preset(fill: .solid(color: BrandPalette.lime), paddingPercent: 10), scale: 1))
         XCTAssertEqual(small.width, 460)
-        // 4000x2000 source: reference 3000, paddingPercent 10 -> 300 px padding -> width 4000+600=4600. Same
-        // percentage, proportionally the same look, at 10x the resolution.
-        let large = try XCTUnwrap(BackgroundRenderer.render(source(4000, 2000), preset: preset(fill: .solid(color: BrandPalette.lime), paddingPercent: 10), scale: 1))
-        XCTAssertEqual(large.width, 4600)
+        // 1600x800 source: reference 1200, paddingPercent 10 -> 120 px padding -> width 1600+240=1840. Same
+        // percentage, proportionally the same look, at 4x the resolution (a 5K case takes seconds in debug builds).
+        let large = try XCTUnwrap(BackgroundRenderer.render(source(1600, 800), preset: preset(fill: .solid(color: BrandPalette.lime), paddingPercent: 10), scale: 1))
+        XCTAssertEqual(large.width, 1840)
     }
 
     /// Neighbouring pixels must not share dither noise: a lag-1 correlation shows up as horizontal streaks.

@@ -128,7 +128,7 @@ public enum BackgroundRenderer {
 
     /// Ink bars above and below the picture band, with the title/tagline in the header, the footer text and an
     /// optional accent square in the footer. Bars and the accent square draw regardless of font availability;
-    /// only the text is skipped (and logged once) when the brand mono face cannot be loaded.
+    /// only the text is skipped (and an error logged per render) when the brand mono face cannot be loaded.
     private static func drawFrame(_ frame: BrandFrame, bar: CGFloat, width: Int, height: Int, reference: CGFloat, scale: CGFloat, ctx: CGContext) {
         let widthF = CGFloat(width)
         let heightF = CGFloat(height)
