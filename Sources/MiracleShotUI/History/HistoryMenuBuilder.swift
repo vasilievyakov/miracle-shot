@@ -47,7 +47,8 @@ public final class HistoryMenuBuilder {
 
     private func thumbnail(for entry: HistoryEntry) -> NSImage? {
         if let cached = thumbnails[entry.path] { return cached }
-        guard let cg = ImageCodec.image(at: URL(fileURLWithPath: entry.path)) else { return nil }
+        // Downsampled decode: the cache holds real thumbnails, not full-resolution captures.
+        guard let cg = ImageCodec.thumbnail(at: URL(fileURLWithPath: entry.path), maxPixelSize: 96) else { return nil }
         let fitted = ImageFit.size(CGSize(width: cg.width, height: cg.height),
                                     into: CGSize(width: 48, height: 32),
                                     minimum: CGSize(width: 24, height: 16))
