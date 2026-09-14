@@ -171,7 +171,7 @@ final class CaptureCoordinatorTests: XCTestCase {
     }
 
     private var solidPreset: BackgroundPreset {
-        BackgroundPreset(id: "t", name: "T", fill: .solid(color: BrandPalette.lime), padding: 10, cornerRadius: 0, shadow: nil)
+        BackgroundPreset(id: "t", name: "T", fill: .solid(color: BrandPalette.lime), paddingPercent: 10, cornerRadiusPercent: 0, shadow: nil)
     }
 
     func testApplyBackgroundRunsTheFinishPathAgain() async {
@@ -185,12 +185,14 @@ final class CaptureCoordinatorTests: XCTestCase {
         XCTAssertTrue(log.entries[1].hasPrefix("save("))
         XCTAssertEqual(log.entries.last, "preview")
         XCTAssertEqual(log.entries.count, 3)
-        XCTAssertEqual(files.lastSaved?.pixelWidth, source.pixelWidth + 20)
-        XCTAssertEqual(files.lastSaved?.pixelHeight, source.pixelHeight + 20)
+        // The 8x6 test capture: reference (8+6)/2=7, paddingPercent 10 -> 0.7 px, under the 24 pt floor -> padding
+        // 24 px on every side -> +48 total.
+        XCTAssertEqual(files.lastSaved?.pixelWidth, source.pixelWidth + 48)
+        XCTAssertEqual(files.lastSaved?.pixelHeight, source.pixelHeight + 48)
         XCTAssertEqual(sut.history.entries.count, 2)
         XCTAssertEqual(sut.history.entries.first?.sourceApp, "Safari")
         XCTAssertEqual(sut.state, .previewing)
-        XCTAssertEqual(sut.lastCapture?.pixelWidth, source.pixelWidth + 20)
+        XCTAssertEqual(sut.lastCapture?.pixelWidth, source.pixelWidth + 48)
     }
 
     func testApplyBackgroundIsIgnoredWhileSelecting() async {
@@ -221,8 +223,10 @@ final class CaptureCoordinatorTests: XCTestCase {
         await sut.perform(.captureArea)
         let source = Capture(image: makeTestImage(width: 8, height: 6), bounds: CGRect(x: 0, y: 0, width: 4, height: 3), scaleFactor: 2)
         sut.applyBackground(solidPreset, to: source)
-        XCTAssertEqual(files.lastSaved?.pixelWidth, 8 + 40)
-        XCTAssertEqual(files.lastSaved?.bounds.size, CGSize(width: 24, height: 23))
+        // reference (8+6)/2=7, paddingPercent 10 -> 0.7 px, under the 24 pt floor -> floor scaled by 2 -> 48 px on
+        // every side -> +96 px total width; in points that is +48 on the 4x3 bounds -> (52, 51).
+        XCTAssertEqual(files.lastSaved?.pixelWidth, 8 + 96)
+        XCTAssertEqual(files.lastSaved?.bounds.size, CGSize(width: 4 + 48, height: 3 + 48))
     }
 
     func testDismissOfSupersededPreviewDoesNotResetAfterApplyBackground() async {

@@ -12,14 +12,24 @@ public enum BackgroundRenderer {
     private static let gradientSamples = 48
     /// Samples along a glow's radius, alpha falling off by `smoothstep` so the edge is soft, not a hard ring.
     private static let glowSamples = 24
+    /// Point floor for padding, so a tiny capture still gets a usable margin; multiplied by `scale` to become
+    /// pixels. Applied only when `paddingPercent` is greater than zero (a zero percent means edge-to-edge).
+    public static let minimumPadding: CGFloat = 24
+    /// Point floor for the corner radius, same rule as `minimumPadding`.
+    public static let minimumCornerRadius: CGFloat = 6
 
-    /// `scale` converts the preset's point values to pixels: pass the capture's `scaleFactor` so a 2x screenshot
-    /// gets 2x padding and keeps its own pixel density.
+    /// `scale` converts the point-based floors to pixels: pass the capture's `scaleFactor` so a 2x screenshot
+    /// keeps its own pixel density. Padding, corner radius and shadow are otherwise a percent of the "reference"
+    /// (the mean of the source's width and height, in pixels), so they do not change with `scale` on their own.
     public static func render(_ source: CGImage, preset: BackgroundPreset, scale: CGFloat) -> CGImage? {
         // Hand-edited presets can carry anything; a NaN would trap in `Int(...)` or empty the clip path silently.
         guard preset.isRenderable, scale.isFinite, scale > 0 else { return nil }
-        // Rounded once so both margins are identical at fractional scale factors.
-        let padding = (CGFloat(preset.padding) * scale).rounded()
+        let reference = CGFloat(source.width + source.height) / 2
+        // Rounded once so both margins are identical at fractional scale factors. A zero percent means
+        // edge-to-edge padding (the floor is skipped so a test can render flush to the canvas).
+        let padding: CGFloat = preset.paddingPercent > 0
+            ? max(Self.minimumPadding * scale, reference * CGFloat(preset.paddingPercent) / 100).rounded()
+            : 0
         let width = Int(CGFloat(source.width) + padding * 2)
         let height = Int(CGFloat(source.height) + padding * 2)
         guard let fill = fillImage(preset, width: width, height: height), let ctx = makeContext(width: width, height: height) else {
@@ -30,14 +40,18 @@ public enum BackgroundRenderer {
         ctx.draw(fill, in: canvas)
 
         let imageRect = CGRect(x: padding, y: padding, width: CGFloat(source.width), height: CGFloat(source.height))
-        let radius = min(CGFloat(preset.cornerRadius) * scale, imageRect.width / 2, imageRect.height / 2)
+        let rawRadius: CGFloat = preset.cornerRadiusPercent > 0
+            ? max(Self.minimumCornerRadius * scale, reference * CGFloat(preset.cornerRadiusPercent) / 100)
+            : 0
+        let radius = min(rawRadius, imageRect.width / 2, imageRect.height / 2)
         let path = CGPath(roundedRect: imageRect, cornerWidth: radius, cornerHeight: radius, transform: nil)
 
         ctx.saveGState()
         if let shadow = preset.shadow, shadow.opacity > 0 {
-            // CG is y-up: a positive on-screen offset is a negative y here.
-            ctx.setShadow(offset: CGSize(width: 0, height: -CGFloat(shadow.offsetY) * scale),
-                          blur: CGFloat(shadow.blur) * scale,
+            // CG is y-up: a positive on-screen offset is a negative y here. Blur and offset are also a percent of
+            // the reference, not scaled by `scale`: the reference is already in pixels.
+            ctx.setShadow(offset: CGSize(width: 0, height: -reference * CGFloat(shadow.offsetPercent) / 100),
+                          blur: reference * CGFloat(shadow.blurPercent) / 100,
                           color: CGColor(colorSpace: sRGB, components: [0, 0, 0, CGFloat(shadow.opacity)]))
             // The transparency layer lets the shadow follow the clipped image's own alpha (rounded corners,
             // transparent window corners) instead of an opaque rectangle drawn underneath it. It costs a
@@ -254,8 +268,8 @@ private extension BackgroundPreset {
     /// Finite, non-negative geometry, at least one gradient stop with finite locations, and glows within their
     /// documented ranges.
     var isRenderable: Bool {
-        guard padding.isFinite, padding >= 0, cornerRadius.isFinite, cornerRadius >= 0 else { return false }
-        if let shadow, !(shadow.blur.isFinite && shadow.blur >= 0 && shadow.offsetY.isFinite && shadow.opacity.isFinite) {
+        guard paddingPercent.isFinite, paddingPercent >= 0, cornerRadiusPercent.isFinite, cornerRadiusPercent >= 0 else { return false }
+        if let shadow, !(shadow.blurPercent.isFinite && shadow.blurPercent >= 0 && shadow.offsetPercent.isFinite && shadow.opacity.isFinite) {
             return false
         }
         switch fill {
