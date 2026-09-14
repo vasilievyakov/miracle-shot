@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreText
 import Foundation
 import os
 
@@ -17,6 +18,13 @@ public enum BackgroundRenderer {
     public static let minimumPadding: CGFloat = 24
     /// Point floor for the corner radius, same rule as `minimumPadding`.
     public static let minimumCornerRadius: CGFloat = 6
+    /// Point floor for a brand frame's bar height, multiplied by `scale`.
+    public static let minimumBarHeight: CGFloat = 36
+    /// Point floor for the frame's text sizes, multiplied by `scale`.
+    public static let minimumTextSize: CGFloat = 10
+    /// Point floor for the frame's side inset, multiplied by `scale`.
+    public static let minimumInset: CGFloat = 16
+    private static let presetLog = Logger(subsystem: "agency.blackbloom.miracleshot", category: "presets")
 
     /// `scale` converts the point-based floors to pixels: pass the capture's `scaleFactor` so a 2x screenshot
     /// keeps its own pixel density. Padding, corner radius and shadow are otherwise a percent of the "reference"
@@ -30,16 +38,31 @@ public enum BackgroundRenderer {
         let padding: CGFloat = preset.paddingPercent > 0
             ? max(Self.minimumPadding * scale, reference * CGFloat(preset.paddingPercent) / 100).rounded()
             : 0
+        // A frame adds ink bars above and below the picture area; their height is a percent of the reference,
+        // like every other geometric knob, with its own floor so a tiny capture still gets a legible bar.
+        let bar: CGFloat = preset.frame == nil ? 0
+            : max(Self.minimumBarHeight * scale, reference * CGFloat(preset.frame!.barPercent) / 100).rounded()
         let width = Int(CGFloat(source.width) + padding * 2)
-        let height = Int(CGFloat(source.height) + padding * 2)
-        guard let fill = fillImage(preset, width: width, height: height), let ctx = makeContext(width: width, height: height) else {
+        let bandHeight = Int(CGFloat(source.height) + padding * 2)
+        let height = bandHeight + Int(bar * 2)
+        guard let fill = fillImage(preset, width: width, height: bandHeight), let ctx = makeContext(width: width, height: height) else {
             return nil
         }
 
-        let canvas = CGRect(x: 0, y: 0, width: width, height: height)
-        ctx.draw(fill, in: canvas)
+        // The picture band is the canvas minus the bars, full width; the fill (and the edge glow) live only here,
+        // never behind the bars.
+        let band = CGRect(x: 0, y: bar, width: CGFloat(width), height: CGFloat(bandHeight))
+        ctx.draw(fill, in: band)
 
-        let imageRect = CGRect(x: padding, y: padding, width: CGFloat(source.width), height: CGFloat(source.height))
+        if let edgeGlow = preset.edgeGlow {
+            drawEdgeGlow(edgeGlow, band: band, reference: reference, ctx: ctx)
+        }
+
+        if let frame = preset.frame {
+            drawFrame(frame, bar: bar, width: width, height: height, reference: reference, scale: scale, ctx: ctx)
+        }
+
+        let imageRect = CGRect(x: padding, y: bar + padding, width: CGFloat(source.width), height: CGFloat(source.height))
         let rawRadius: CGFloat = preset.cornerRadiusPercent > 0
             ? max(Self.minimumCornerRadius * scale, reference * CGFloat(preset.cornerRadiusPercent) / 100)
             : 0
@@ -82,6 +105,74 @@ public enum BackgroundRenderer {
         ctx.clip()
         ctx.draw(fill, in: rect)
         return ctx.makeImage()
+    }
+
+    // MARK: - Edge glow and brand frame
+
+    /// Classic CG inner shadow: a ring drawn just outside the picture band casts a blurred shadow that bleeds
+    /// inward across the band's edges (and further still in the corners, where two edges overlap); the ring
+    /// itself is clipped away by `band`, only its shadow lands inside.
+    private static func drawEdgeGlow(_ edge: EdgeGlow, band: CGRect, reference: CGFloat, ctx: CGContext) {
+        ctx.saveGState()
+        ctx.clip(to: band)
+        let blur = reference * CGFloat(edge.widthPercent) / 100
+        ctx.setShadow(offset: .zero, blur: blur, color: edge.color.cgColor(alpha: CGFloat(edge.opacity)))
+        let ring = CGMutablePath()
+        ring.addRect(band.insetBy(dx: -blur * 2, dy: -blur * 2))
+        ring.addRect(band)
+        ctx.addPath(ring)
+        ctx.setFillColor(edge.color.cgColor())
+        ctx.fillPath(using: .evenOdd)
+        ctx.restoreGState()
+    }
+
+    /// Ink bars above and below the picture band, with the title/tagline in the header, the footer text and an
+    /// optional accent square in the footer. Bars and the accent square draw regardless of font availability;
+    /// only the text is skipped (and logged once) when the brand mono face cannot be loaded.
+    private static func drawFrame(_ frame: BrandFrame, bar: CGFloat, width: Int, height: Int, reference: CGFloat, scale: CGFloat, ctx: CGContext) {
+        let widthF = CGFloat(width)
+        let heightF = CGFloat(height)
+        ctx.setFillColor(frame.barColor.cgColor())
+        ctx.fill(CGRect(x: 0, y: heightF - bar, width: widthF, height: bar))   // header, top of the canvas
+        ctx.fill(CGRect(x: 0, y: 0, width: widthF, height: bar))               // footer, bottom of the canvas
+
+        let titleSize = max(Self.minimumTextSize * scale, reference * 1.0 / 100)
+        let smallSize = max(Self.minimumTextSize * scale, reference * 0.8 / 100)
+        let inset = max(Self.minimumInset * scale, reference * 8 / 100)
+        let headerMidY = heightF - bar / 2
+        let footerMidY = bar / 2
+
+        if let titleFont = CoreTypeface.mono(size: titleSize, weight: 700), let bodyFont = CoreTypeface.mono(size: smallSize, weight: 400) {
+            ctx.setShouldSmoothFonts(true)
+            let titleWidth = drawLine(frame.title, font: titleFont, color: frame.titleColor, x: inset, barMidY: headerMidY, ctx: ctx)
+            drawLine(frame.tagline, font: bodyFont, color: frame.textColor, x: inset + titleWidth + 1.5 * smallSize, barMidY: headerMidY, ctx: ctx)
+            drawLine(frame.footer, font: bodyFont, color: frame.textColor, x: inset, barMidY: footerMidY, ctx: ctx)
+        } else {
+            presetLog.error("JetBrains Mono could not be loaded from the resource bundle; drawing the frame without text")
+        }
+
+        if let accent = frame.accent {
+            let side = max(4 * scale, reference * 0.6 / 100)
+            ctx.setFillColor(accent.cgColor())
+            ctx.fill(CGRect(x: widthF - inset - side, y: footerMidY - side / 2, width: side, height: side))
+        }
+    }
+
+    /// Draws one line of text with its baseline vertically centered in a bar; returns the line's typographic
+    /// width so a caller can lay out the next run after it.
+    @discardableResult
+    private static func drawLine(_ text: String, font: CTFont, color: BrandColor, x: CGFloat, barMidY: CGFloat, ctx: CGContext) -> CGFloat {
+        let attributes: [NSAttributedString.Key: Any] = [
+            kCTFontAttributeName as NSAttributedString.Key: font,
+            kCTForegroundColorAttributeName as NSAttributedString.Key: color.cgColor(),
+        ]
+        let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: attributes))
+        var ascent: CGFloat = 0
+        var descent: CGFloat = 0
+        let width = CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, nil))
+        ctx.textPosition = CGPoint(x: x, y: barMidY - (ascent - descent) / 2)
+        CTLineDraw(line, ctx)
+        return width
     }
 
     // MARK: - Fill (16 bit, OKLab-expanded stops, glows, dithered to 8 bit)
@@ -270,6 +361,12 @@ private extension BackgroundPreset {
     var isRenderable: Bool {
         guard paddingPercent.isFinite, paddingPercent >= 0, cornerRadiusPercent.isFinite, cornerRadiusPercent >= 0 else { return false }
         if let shadow, !(shadow.blurPercent.isFinite && shadow.blurPercent >= 0 && shadow.offsetPercent.isFinite && shadow.opacity.isFinite) {
+            return false
+        }
+        if let edgeGlow, !(edgeGlow.widthPercent.isFinite && edgeGlow.widthPercent >= 0 && edgeGlow.opacity.isFinite && (0...1).contains(edgeGlow.opacity)) {
+            return false
+        }
+        if let frame, !(frame.barPercent.isFinite && frame.barPercent >= 0) {
             return false
         }
         switch fill {

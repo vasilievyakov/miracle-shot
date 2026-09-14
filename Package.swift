@@ -10,12 +10,11 @@ let package = Package(
     targets: [
         .target(
             name: "MiracleShotCore",
-            resources: [.copy("Resources/presets")]
+            resources: [.copy("Resources/presets"), .copy("Resources/fonts")]
         ),
         .target(
             name: "MiracleShotUI",
-            dependencies: ["MiracleShotCore"],
-            resources: [.copy("Resources/fonts")]
+            dependencies: ["MiracleShotCore"]
         ),
         .executableTarget(
             name: "MiracleShotApp",
