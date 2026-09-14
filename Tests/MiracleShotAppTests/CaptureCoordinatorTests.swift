@@ -119,4 +119,42 @@ final class CaptureCoordinatorTests: XCTestCase {
         await sut.perform(.captureArea)
         XCTAssertEqual(seen, [.selecting(.area), .capturing, .previewing])
     }
+
+    func testStaleDismissFromReplacedPreviewIsIgnored() async {
+        await sut.perform(.captureArea)
+        let stale = preview.onDismiss
+        await sut.perform(.captureArea)          // allowed while previewing; replaces the preview
+        XCTAssertEqual(sut.state, .previewing)
+        stale?()
+        XCTAssertEqual(sut.state, .previewing, "a superseded preview must not reset the new flow")
+        preview.onDismiss?()
+        XCTAssertEqual(sut.state, .idle)
+    }
+
+    func testRemoveFromHistoryPersistsAndNotifies() async throws {
+        await sut.perform(.captureArea)
+        var notified: [Int] = []
+        sut.onHistoryChange = { notified.append($0.entries.count) }
+        let id = try XCTUnwrap(sut.history.entries.first?.id)
+        sut.removeFromHistory(id: id)
+        XCTAssertTrue(sut.history.entries.isEmpty)
+        XCTAssertEqual(notified, [0])
+        XCTAssertTrue(HistoryIndex.load(from: historyURL, limit: 50).entries.isEmpty)
+    }
+
+    func testWindowCaptureCarriesWindowInfo() async {
+        let window = WindowInfo(id: 7, frame: CGRect(x: 0, y: 0, width: 100, height: 50), layer: 0,
+                                ownerName: "Safari", ownerPID: 1, title: "Apple")
+        selection.result = .window(window)
+        await sut.perform(.captureWindow)
+        XCTAssertTrue(log.entries.contains { $0.hasPrefix("capture(window(") })
+        XCTAssertEqual(sut.state, .previewing)
+    }
+
+    func testErrorToastUsesReadableDescription() async {
+        capture.error = .permissionDenied
+        await sut.perform(.captureArea)
+        XCTAssertEqual(notifications.posted.last?.title, "Capture failed")
+        XCTAssertEqual(notifications.lastBody, "Screen Recording permission is not granted.")
+    }
 }

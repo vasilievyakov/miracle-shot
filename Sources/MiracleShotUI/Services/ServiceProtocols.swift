@@ -8,11 +8,20 @@ public enum SelectionResult: Sendable, Equatable {
     case window(WindowInfo)
 }
 
-public enum CaptureError: Error, Equatable, Sendable {
+public enum CaptureError: LocalizedError, Equatable, Sendable {
     case permissionDenied
     case displayNotFound
     case windowNotFound
     case emptyImage
+
+    public var errorDescription: String? {
+        switch self {
+        case .permissionDenied: return "Screen Recording permission is not granted."
+        case .displayNotFound: return "The display is no longer available."
+        case .windowNotFound: return "The window is no longer on screen."
+        case .emptyImage: return "The screen capture returned no image."
+        }
+    }
 }
 
 @MainActor public protocol CaptureServicing: AnyObject {
@@ -42,5 +51,7 @@ public enum CaptureError: Error, Equatable, Sendable {
 }
 
 @MainActor public protocol PreviewPresenting: AnyObject {
+    /// Shows the preview for `capture`. A later `show` replaces the current preview; the coordinator ignores
+    /// `onDismiss` calls that belong to a superseded preview, so implementations may still call them.
     func show(capture: Capture, fileURL: URL?, onDismiss: @escaping @MainActor () -> Void)
 }

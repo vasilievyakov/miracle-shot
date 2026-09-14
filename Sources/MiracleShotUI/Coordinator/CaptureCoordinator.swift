@@ -21,7 +21,11 @@ public final class CaptureCoordinator {
     private let files: FileSaving
     private let notifications: NotificationPosting
     private let preview: PreviewPresenting
+    /// Per-process counter for the `{seq}` template token. It resets on relaunch; `FileSaveService` makes names
+    /// unique on disk, so a repeated number can never overwrite a file.
     private var sequence = 0
+    /// Incremented for every finished capture so a preview's `onDismiss` from an earlier flow cannot reset a newer one.
+    private var flowGeneration = 0
 
     public init(settings: Settings, historyURL: URL, capture: CaptureServicing, selection: SelectionPresenting,
                 clipboard: ClipboardServicing, files: FileSaving, notifications: NotificationPosting,
@@ -71,7 +75,7 @@ public final class CaptureCoordinator {
             finish(shot)
         } catch {
             transition(.captureFailed)
-            notifications.post(title: "Capture failed", body: String(describing: error), isError: true)
+            notifications.post(title: "Capture failed", body: error.localizedDescription, isError: true)
         }
     }
 
@@ -95,8 +99,11 @@ public final class CaptureCoordinator {
                                         height: shot.pixelHeight, sourceApp: shot.sourceAppName))
             persistHistory()
         }
+        flowGeneration += 1
+        let generation = flowGeneration
         preview.show(capture: shot, fileURL: fileURL) { [weak self] in
-            self?.transition(.previewDismissed)
+            guard let self, self.flowGeneration == generation else { return }
+            self.transition(.previewDismissed)
         }
     }
 
@@ -105,14 +112,15 @@ public final class CaptureCoordinator {
         let name = settings.namingTemplate.fileName(date: shot.timestamp, appName: shot.sourceAppName, sequence: sequence)
         do {
             return try files.save(shot, named: name, in: settings.saveDirectoryURL)
-        } catch {
+        } catch let primaryError {
             do {
                 let url = try files.save(shot, named: name, in: Settings.fallbackSaveDirectory)
                 notifications.post(title: "Saved to Pictures/Miracle Shot",
-                                   body: "The configured folder is not writable.", isError: false)
+                                   body: "The configured folder is not writable: \(primaryError.localizedDescription)",
+                                   isError: false)
                 return url
-            } catch {
-                notifications.post(title: "Could not save screenshot", body: String(describing: error), isError: true)
+            } catch let fallbackError {
+                notifications.post(title: "Could not save screenshot", body: fallbackError.localizedDescription, isError: true)
                 return nil
             }
         }

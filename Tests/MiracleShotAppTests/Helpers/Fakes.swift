@@ -89,10 +89,12 @@ func makeCapture() -> Capture {
 @MainActor final class FakeNotifications: NotificationPosting {
     let log: CallLog
     var posted: [(title: String, isError: Bool)] = []
+    var lastBody: String?
     init(log: CallLog) { self.log = log }
     func post(title: String, body: String, isError: Bool) {
         log.add("notify(\(isError ? "error" : "info"))")
         posted.append((title, isError))
+        lastBody = body
     }
 }
 
