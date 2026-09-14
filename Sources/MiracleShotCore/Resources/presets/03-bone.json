@@ -1,0 +1,11 @@
+{
+  "id": "bone",
+  "name": "Bone",
+  "fill": { "linearGradient": { "angle": 135, "stops": [
+    { "color": "#f3f0e8", "location": 0 },
+    { "color": "#b8b4a8", "location": 1 }
+  ] } },
+  "padding": 64,
+  "cornerRadius": 12,
+  "shadow": { "blur": 40, "offsetY": 16, "opacity": 0.25 }
+}

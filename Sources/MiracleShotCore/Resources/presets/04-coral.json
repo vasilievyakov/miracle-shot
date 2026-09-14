@@ -1,0 +1,12 @@
+{
+  "id": "coral",
+  "name": "Coral",
+  "fill": { "linearGradient": { "angle": 135, "stops": [
+    { "color": "#ff5a36", "location": 0 },
+    { "color": "#ff5a36", "location": 0.45 },
+    { "color": "#141416", "location": 1 }
+  ] } },
+  "padding": 64,
+  "cornerRadius": 12,
+  "shadow": { "blur": 40, "offsetY": 16, "opacity": 0.5 }
+}

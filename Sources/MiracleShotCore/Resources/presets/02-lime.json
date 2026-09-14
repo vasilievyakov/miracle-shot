@@ -1,0 +1,11 @@
+{
+  "id": "lime",
+  "name": "Lime",
+  "fill": { "linearGradient": { "angle": 135, "stops": [
+    { "color": "#d4ff3f", "location": 0 },
+    { "color": "#9bbf2a", "location": 1 }
+  ] } },
+  "padding": 64,
+  "cornerRadius": 12,
+  "shadow": { "blur": 40, "offsetY": 16, "opacity": 0.35 }
+}
