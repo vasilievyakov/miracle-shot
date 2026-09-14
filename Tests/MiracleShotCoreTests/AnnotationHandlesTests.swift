@@ -105,4 +105,15 @@ final class AnnotationHandlesTests: XCTestCase {
         let resized = AnnotationHandles.resized(annotation, handle: .topLeft, to: CGPoint(x: 999, y: 999))
         XCTAssertEqual(resized, annotation)
     }
+
+    func testResizedIsNoOpForLineWithRectOnlyHandle() {
+        let annotation = Annotation(shape: .line(from: .zero, to: CGPoint(x: 100, y: 100)), style: AnnotationStyle())
+        XCTAssertEqual(AnnotationHandles.resized(annotation, handle: .top, to: CGPoint(x: 999, y: 999)), annotation)
+    }
+
+    /// Equidistant handles resolve in `handles(for:)` order: (2.5, 0) is 2.5 from both `topLeft` and `top`.
+    func testHandleAtTieGoesToTheFirstHandleInOrder() {
+        let annotation = Annotation(shape: .rect(CGRect(x: 0, y: 0, width: 10, height: 10)), style: AnnotationStyle())
+        XCTAssertEqual(AnnotationHandles.handle(at: CGPoint(x: 2.5, y: 0), in: annotation, tolerance: 10), .topLeft)
+    }
 }

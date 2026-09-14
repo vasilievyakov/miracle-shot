@@ -102,4 +102,12 @@ final class AnnotationHitTestTests: XCTestCase {
         let d = AnnotationHitTest.distance(from: CGPoint(x: 3, y: 4), toSegment: CGPoint(x: 0, y: 0), CGPoint(x: 0, y: 0))
         XCTAssertEqual(d, 5)
     }
+
+    func testFreehandWithSinglePointHitsNearThatPoint() {
+        var style = AnnotationStyle()
+        style.lineWidth = 4
+        let freehand = Annotation(shape: .freehand([CGPoint(x: 50, y: 50)]), style: style)
+        XCTAssertNotNil(AnnotationHitTest.hit(CGPoint(x: 52, y: 50), in: [freehand], tolerance: 2, bounds: noBounds))
+        XCTAssertNil(AnnotationHitTest.hit(CGPoint(x: 100, y: 100), in: [freehand], tolerance: 2, bounds: noBounds))
+    }
 }
