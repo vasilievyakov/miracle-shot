@@ -18,6 +18,17 @@ public final class SelectionOverlayController: SelectionPresenting {
         return await withCheckedContinuation { continuation = $0 }
     }
 
+    /// Called when a panel resigns key. If no overlay panel is key on the next run loop turn, focus went elsewhere
+    /// (app switch, Space change) and the selection is cancelled so the continuation and cursor are not leaked.
+    func keyStatusChanged() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.continuation != nil else { return }
+            if !self.panels.contains(where: { $0.isKeyWindow }) {
+                self.finish(with: nil)
+            }
+        }
+    }
+
     func finish(with result: SelectionResult?) {
         guard let continuation else { return }
         self.continuation = nil

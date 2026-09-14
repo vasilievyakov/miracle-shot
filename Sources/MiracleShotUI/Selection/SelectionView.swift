@@ -6,7 +6,7 @@ import MiracleShotCore
 final class SelectionView: NSView {
     private let screen: NSScreen
     private let mode: CaptureMode
-    private unowned let controller: SelectionOverlayController
+    unowned let controller: SelectionOverlayController
     private var dragStart: CGPoint?
     private var selection: CGRect?
 
