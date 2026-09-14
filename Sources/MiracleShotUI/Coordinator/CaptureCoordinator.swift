@@ -84,6 +84,12 @@ public final class CaptureCoordinator {
         persistHistory()
     }
 
+    /// Clears every entry with a single disk write and a single change notification.
+    public func clearHistory() {
+        history = HistoryIndex(limit: settings.historyLimit)
+        persistHistory()
+    }
+
     // MARK: - Private
 
     private func transition(_ event: CaptureEvent) {

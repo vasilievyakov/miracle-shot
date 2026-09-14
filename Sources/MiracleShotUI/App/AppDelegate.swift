@@ -44,7 +44,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         historyMenu.onClear = { [weak self] in
             guard let self else { return }
-            for entry in coordinator.history.entries { coordinator.removeFromHistory(id: entry.id) }
+            coordinator.clearHistory()
         }
 
         settingsWindow = SettingsWindowController { [weak self] updated in self?.apply(updated) }
@@ -78,7 +78,11 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         settings = updated
         coordinator.settings = updated
         preview.timeout = updated.previewTimeout
-        try? updated.save()
+        do {
+            try updated.save()
+        } catch {
+            log.error("Could not save settings: \(error.localizedDescription, privacy: .public)")
+        }
         if hotkeysChanged { registerHotkeys() }
         rebuildMenu()
     }

@@ -157,4 +157,16 @@ final class CaptureCoordinatorTests: XCTestCase {
         XCTAssertEqual(notifications.posted.last?.title, "Capture failed")
         XCTAssertEqual(notifications.lastBody, "Screen Recording permission is not granted.")
     }
+
+    func testClearHistoryPersistsOnceAndNotifiesOnce() async {
+        await sut.perform(.captureArea)
+        preview.onDismiss?()
+        await sut.perform(.captureArea)
+        var notifications = 0
+        sut.onHistoryChange = { _ in notifications += 1 }
+        sut.clearHistory()
+        XCTAssertTrue(sut.history.entries.isEmpty)
+        XCTAssertEqual(notifications, 1)
+        XCTAssertTrue(HistoryIndex.load(from: historyURL, limit: 50).entries.isEmpty)
+    }
 }

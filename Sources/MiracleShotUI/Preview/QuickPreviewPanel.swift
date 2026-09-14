@@ -36,7 +36,8 @@ public final class QuickPreviewPanel: PreviewPresenting {
         self.onDismiss = onDismiss
         current = (capture, fileURL)
 
-        let buttons = Action.allCases.filter { handlers[$0] != nil }.map { action -> BrandButton in
+        // Reveal needs a file on disk; a failed save leaves nothing to reveal.
+        let buttons = Action.allCases.filter { handlers[$0] != nil && ($0 != .reveal || fileURL != nil) }.map { action -> BrandButton in
             let b = BrandButton(title: action.title, target: self, action: #selector(buttonPressed(_:)))
             b.tag = Action.allCases.firstIndex(of: action)!
             return b
