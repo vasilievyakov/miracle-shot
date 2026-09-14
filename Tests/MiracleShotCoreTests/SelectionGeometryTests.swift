@@ -86,8 +86,39 @@ final class SelectionGeometryTests: XCTestCase {
     // MARK: pixel alignment and flipping
 
     func testPixelAlignedRoundsToDevicePixels() {
+        // Corners: 10.3 -> 10.5, 10.7 -> 10.5, maxX 30.5 -> 30.5, maxY 31.3 -> 31.5 at scale 2.
         let r = SelectionGeometry.pixelAligned(CGRect(x: 10.3, y: 10.7, width: 20.2, height: 20.6), scale: 2)
-        XCTAssertEqual(r, CGRect(x: 10.5, y: 10.5, width: 20, height: 20.5))
+        XCTAssertEqual(r, CGRect(x: 10.5, y: 10.5, width: 20, height: 21))
+    }
+
+    func testPixelAlignedKeepsFarEdgesOnRoundedPixels() {
+        let rect = CGRect(x: 0.4, y: 0.4, width: 10.3, height: 10.3)   // maxX = 10.7 -> 11 at scale 1
+        let r = SelectionGeometry.pixelAligned(rect, scale: 1)
+        XCTAssertEqual(r.minX, 0)
+        XCTAssertEqual(r.maxX, 11)
+        XCTAssertEqual(r.maxY, 11)
+    }
+
+    func testSnapCanCollapseToZeroHeight() {
+        let w = win(1, 100, 100, 300, 200)   // minY = 100
+        let rect = CGRect(x: 120, y: 97, width: 50, height: 6)   // edges 97 and 103, both within 8 of 100
+        let snapped = SelectionGeometry.snapped(rect, to: [w], threshold: 8)
+        XCTAssertEqual(snapped.height, 0)
+        XCTAssertEqual(snapped.minY, 100)
+    }
+
+    func testMagnifierFlipsOnSecondaryDisplayWithNonZeroOrigin() {
+        let screen = CGRect(x: 2000, y: -200, width: 1000, height: 800)
+        let near = SelectionGeometry.magnifierFrame(cursor: CGPoint(x: 2100, y: -100), size: 120, offset: 20, in: screen)
+        XCTAssertEqual(near, CGRect(x: 2120, y: -80, width: 120, height: 120))
+        let far = SelectionGeometry.magnifierFrame(cursor: CGPoint(x: 2950, y: 550), size: 120, offset: 20, in: screen)
+        XCTAssertEqual(far, CGRect(x: 2950 - 140, y: 550 - 140, width: 120, height: 120))
+    }
+
+    func testMagnifierIsClampedIntoTinyScreen() {
+        let screen = CGRect(x: 0, y: 0, width: 200, height: 200)
+        let f = SelectionGeometry.magnifierFrame(cursor: CGPoint(x: 190, y: 190), size: 120, offset: 20, in: screen)
+        XCTAssertTrue(screen.contains(f), "\(f) is not inside \(screen)")
     }
 
     func testFlippedIsAnInvolution() {

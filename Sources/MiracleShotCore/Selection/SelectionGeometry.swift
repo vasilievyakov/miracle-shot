@@ -17,6 +17,9 @@ public enum SelectionGeometry {
         }
     }
 
+    /// Snaps each edge independently to the nearest window edge within `threshold`. The result never inverts,
+    /// but it can collapse to zero width or height when both opposite edges snap to the same line; callers
+    /// must reject selections smaller than one point.
     public static func snapped(_ rect: CGRect, to windows: [WindowInfo], threshold: CGFloat) -> CGRect {
         let xs = windows.flatMap { [$0.frame.minX, $0.frame.maxX] }
         let ys = windows.flatMap { [$0.frame.minY, $0.frame.maxY] }
@@ -33,17 +36,24 @@ public enum SelectionGeometry {
         return best
     }
 
+    /// Magnifier sits bottom-right of the cursor and flips to the other side near the right and bottom edges.
+    /// After flipping it is clamped into `screen`, which only matters when the screen is narrower than `2 * (size + offset)`.
     public static func magnifierFrame(cursor: CGPoint, size: CGFloat, offset: CGFloat, in screen: CGRect) -> CGRect {
         var x = cursor.x + offset
         var y = cursor.y + offset
         if x + size > screen.maxX { x = cursor.x - offset - size }
         if y + size > screen.maxY { y = cursor.y - offset - size }
+        x = max(screen.minX, min(x, screen.maxX - size))
+        y = max(screen.minY, min(y, screen.maxY - size))
         return CGRect(x: x, y: y, width: size, height: size)
     }
 
+    /// Rounds the corners to device pixels; width and height are derived from the rounded corners so the
+    /// right and bottom edges land on the same pixel a rounded `maxX`/`maxY` would.
     public static func pixelAligned(_ rect: CGRect, scale: CGFloat) -> CGRect {
         func r(_ v: CGFloat) -> CGFloat { (v * scale).rounded() / scale }
-        return CGRect(x: r(rect.minX), y: r(rect.minY), width: r(rect.width), height: r(rect.height))
+        let minX = r(rect.minX), minY = r(rect.minY), maxX = r(rect.maxX), maxY = r(rect.maxY)
+        return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
     }
 
     /// AppKit <-> CoreGraphics global coordinate flip. Applying it twice returns the input.
