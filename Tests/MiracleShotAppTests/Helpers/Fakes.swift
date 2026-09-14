@@ -81,10 +81,12 @@ func makeCapture() -> Capture {
     /// Directories whose saves throw.
     var failingDirectories: Set<String> = []
     var failAll = false
+    var lastSaved: Capture?
     init(log: CallLog) { self.log = log }
     struct SaveError: Error {}
 
     func save(_ capture: Capture, named fileName: String, in directory: URL) throws -> URL {
+        lastSaved = capture
         log.add("save(\(fileName), \(directory.lastPathComponent))")
         if failAll || failingDirectories.contains(directory.path) { throw SaveError() }
         return directory.appendingPathComponent(fileName)

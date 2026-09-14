@@ -169,4 +169,52 @@ final class CaptureCoordinatorTests: XCTestCase {
         XCTAssertEqual(notifications, 1)
         XCTAssertTrue(HistoryIndex.load(from: historyURL, limit: 50).entries.isEmpty)
     }
+
+    private var solidPreset: BackgroundPreset {
+        BackgroundPreset(id: "t", name: "T", fill: .solid(color: BrandPalette.lime), padding: 10, cornerRadius: 0, shadow: nil)
+    }
+
+    func testApplyBackgroundRunsTheFinishPathAgain() async {
+        await sut.perform(.captureArea)
+        let source = sut.lastCapture!
+        log.entries.removeAll()
+
+        sut.applyBackground(solidPreset, to: source)
+
+        XCTAssertEqual(log.entries.first, "copy")
+        XCTAssertTrue(log.entries[1].hasPrefix("save("))
+        XCTAssertEqual(log.entries.last, "preview")
+        XCTAssertEqual(log.entries.count, 3)
+        XCTAssertEqual(files.lastSaved?.pixelWidth, source.pixelWidth + 20)
+        XCTAssertEqual(files.lastSaved?.pixelHeight, source.pixelHeight + 20)
+        XCTAssertEqual(sut.history.entries.count, 2)
+        XCTAssertEqual(sut.history.entries.first?.sourceApp, "Safari")
+        XCTAssertEqual(sut.state, .previewing)
+        XCTAssertEqual(sut.lastCapture?.pixelWidth, source.pixelWidth + 20)
+    }
+
+    func testApplyBackgroundIsIgnoredWhenNotPreviewing() {
+        let source = makeCapture()
+        sut.applyBackground(solidPreset, to: source)
+        XCTAssertTrue(log.entries.isEmpty)
+        XCTAssertEqual(sut.state, .idle)
+    }
+
+    func testApplyBackgroundScalesPaddingByCaptureScale() async {
+        await sut.perform(.captureArea)
+        let source = Capture(image: makeTestImage(width: 8, height: 6), bounds: CGRect(x: 0, y: 0, width: 4, height: 3), scaleFactor: 2)
+        sut.applyBackground(solidPreset, to: source)
+        XCTAssertEqual(files.lastSaved?.pixelWidth, 8 + 40)
+        XCTAssertEqual(files.lastSaved?.bounds.size, CGSize(width: 24, height: 23))
+    }
+
+    func testDismissOfSupersededPreviewDoesNotResetAfterApplyBackground() async {
+        await sut.perform(.captureArea)
+        let firstDismiss = preview.onDismiss
+        sut.applyBackground(solidPreset, to: sut.lastCapture!)
+        firstDismiss?()
+        XCTAssertEqual(sut.state, .previewing)
+        preview.onDismiss?()
+        XCTAssertEqual(sut.state, .idle)
+    }
 }
