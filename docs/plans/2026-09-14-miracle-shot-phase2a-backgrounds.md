@@ -1330,3 +1330,117 @@ offset: CGSize(width: 0, height: -reference * CGFloat(shadow.offsetPercent) / 10
 - `CaptureCoordinatorTests`: `solidPreset` uses `paddingPercent: 10, cornerRadiusPercent: 0`; the 8x6 test capture hits the 24 pt floor: expect `pixelWidth + 48` at scale 1 and, in the scale-2 test, `8 + 96` px wide with bounds size `(4 + 48, 3 + 48)`.
 
 **Commit:** "Make background padding, radius and shadow proportional to the capture".
+
+---
+
+### Task 10: Brand frame preset (edge glow, header and footer bars with text)
+
+User request: a fifth preset that reproduces the lab's branded frame: ink header bar with the brand name in lime and a tagline, ink footer bar with the site address and a small accent square at the right, and a lime glow bleeding inward from every edge of the picture area (like an inset box shadow, brightest in the corners). Measured on the reference (2000x1178 pt): bars 5 percent of the mean side, side inset 8 percent, title 1.0 percent, small text 0.8 percent, edge glow width 8 percent at about 55 percent opacity, accent square 0.6 percent. The reference marker is pink, which is not a palette token: the built-in uses coral; users can change the hex in their own JSON.
+
+**Fonts move to Core.** Rendered text needs the brand mono face, and Core cannot see the UI bundle. `git mv Sources/MiracleShotUI/Resources/fonts Sources/MiracleShotCore/Resources/fonts`; in `Package.swift` the Core target declares `resources: [.copy("Resources/presets"), .copy("Resources/fonts")]` and the UI target declares no resources (remove its `resources:` line). `Sources/MiracleShotUI/Support/UIResources.swift` is deleted (`git rm`) since `Bundle.module` no longer exists for the UI target; `BrandFont` and `BrandFontTests` use `CoreResources.bundle` instead. `scripts/fetch-fonts.sh` DEST becomes the Core folder. (This is the one deliberate Package.swift change of phase 2; note it in the commit message.)
+
+**Files:**
+- Modify: `Package.swift`, `scripts/fetch-fonts.sh`, `Sources/MiracleShotUI/Support/BrandFont.swift`, `Tests/MiracleShotAppTests/BrandFontTests.swift`; move fonts; delete `UIResources.swift`.
+- Create: `Sources/MiracleShotCore/Brand/CoreTypeface.swift` — `enum CoreTypeface { static func mono(size: CGFloat, weight: CGFloat) -> CTFont? }`: loads `JetBrainsMono-Variable.ttf` from `CoreResources.bundle/fonts` via `CTFontManagerCreateFontDescriptorsFromURL`, applies the wght axis with `CTFontDescriptorCreateCopyWithVariation(desc, NSNumber(value: 0x77676874), weight)`, returns `CTFontCreateWithFontDescriptor`. No caching (CoreText types are not Sendable; a render is one call per click). Returns nil when the file is missing; the renderer then skips text but still draws the bars.
+- Modify: `Sources/MiracleShotCore/Background/BackgroundPreset.swift` — add:
+
+```swift
+/// Light bleeding inward from every edge of the picture area, like an inset box shadow; brightest in the corners.
+public struct EdgeGlow: Codable, Sendable, Equatable {
+    public var color: BrandColor
+    /// Blur width in percent of the mean side of the screenshot.
+    public var widthPercent: Double
+    public var opacity: Double
+    public init(color: BrandColor, widthPercent: Double, opacity: Double)
+}
+
+/// Ink bars above and below the picture with brand text in the mono face.
+public struct BrandFrame: Codable, Sendable, Equatable {
+    /// Header, left: bold, in `titleColor`.
+    public var title: String
+    /// Header, after the title: regular, in `textColor`.
+    public var tagline: String
+    /// Footer, left: regular, in `textColor`.
+    public var footer: String
+    /// Bar height in percent of the mean side of the screenshot.
+    public var barPercent: Double
+    public var barColor: BrandColor
+    public var titleColor: BrandColor
+    public var textColor: BrandColor
+    /// Small square at the footer's right edge; nil for none.
+    public var accent: BrandColor?
+    public init(...)
+}
+```
+
+`BackgroundPreset` gains `edgeGlow: EdgeGlow?` and `frame: BrandFrame?` (init parameters with default nil after `glows`; `decodeIfPresent`; add to `CodingKeys`). `colors` includes the edge glow color and every frame color. `isRenderable`: edge glow width finite and >= 0, opacity in 0...1; frame `barPercent` finite and >= 0.
+
+- Modify: `Sources/MiracleShotCore/Background/BackgroundRenderer.swift`:
+  - Floors (points, times `scale`): `minimumBarHeight = 36`, `minimumTextSize = 10`, `minimumInset = 16`.
+  - Layout: `bar = frame == nil ? 0 : max(minimumBarHeight * scale, reference * barPercent / 100).rounded()`. Canvas height = source.height + 2 * padding + 2 * bar. Picture band = canvas minus the bars (full width, from y = bar to y = height - bar in CG coordinates). The fill image (`fillImage`) is drawn only in the band; the screenshot sits at `(padding, bar + padding)`.
+  - Edge glow, drawn on the band after the fill and before the screenshot, classic CG inner shadow:
+
+```swift
+ctx.saveGState()
+ctx.clip(to: band)
+let blur = reference * CGFloat(edge.widthPercent) / 100
+ctx.setShadow(offset: .zero, blur: blur, color: edge.color.cgColor(alpha: CGFloat(edge.opacity)))
+// Fill the ring outside the band (even-odd); the ring itself is clipped away, only its shadow lands inside.
+let ring = CGMutablePath()
+ring.addRect(band.insetBy(dx: -blur * 2, dy: -blur * 2))
+ring.addRect(band)
+ctx.addPath(ring)
+ctx.setFillColor(edge.color.cgColor())
+ctx.fillPath(using: .evenOdd)
+ctx.restoreGState()
+```
+
+  - Bars: fill the top and bottom rects with `barColor`. Text sizes: `title = max(minimumTextSize * scale, reference * 1.0 / 100)`, `small = max(minimumTextSize * scale, reference * 0.8 / 100)`, inset `= max(minimumInset * scale, reference * 8 / 100)`. Header: title at `x = inset`, vertically centered in the top bar (use `CTLineGetBoundsWithOptions(line, .useGlyphPathBounds)` or ascent/descent from `CTLineGetTypographicBounds` to center the cap height; baseline `y = barMidY - (ascent - descent) / 2`); tagline follows at `x = inset + titleWidth + 1.5 * small`. Footer: `footer` text at `x = inset`, same centering in the bottom bar; accent square of side `max(4 * scale, reference * 0.6 / 100)` at `x = width - inset - side`, vertically centered. Text drawing:
+
+```swift
+let attributes: [NSAttributedString.Key: Any] = [
+    kCTFontAttributeName as NSAttributedString.Key: font,
+    kCTForegroundColorAttributeName as NSAttributedString.Key: color.cgColor(),
+]
+let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: attributes))
+ctx.textPosition = CGPoint(x: x, y: baseline)
+CTLineDraw(line, ctx)
+```
+
+    Title weight 700, others 400. If `CoreTypeface.mono` returns nil, skip the text (bars and accent still drawn) and log once via `Logger(category: "presets")`.
+  - Antialiasing on for text (`ctx.setShouldSmoothFonts(true)` is fine, no subpixel).
+
+- Create: `Sources/MiracleShotCore/Resources/presets/05-lab-brand.json`:
+
+```json
+{
+  "id": "lab-brand",
+  "name": "Lab Brand",
+  "fill": { "solid": { "color": "#0b0b0c" } },
+  "edgeGlow": { "color": "#d4ff3f", "widthPercent": 8, "opacity": 0.55 },
+  "frame": {
+    "title": "AI-LAB",
+    "tagline": "Agentic Analytics & Research Lab",
+    "footer": "ai-lab-agents.com",
+    "barPercent": 5,
+    "barColor": "#0b0b0c",
+    "titleColor": "#d4ff3f",
+    "textColor": "#b8b4a8",
+    "accent": "#ff5a36"
+  },
+  "paddingPercent": 8,
+  "cornerRadiusPercent": 1.2,
+  "shadow": { "blurPercent": 5, "offsetPercent": 2, "opacity": 0.7 }
+}
+```
+
+- Tests:
+  - `BackgroundPresetTests`: `testBuiltInPresetsLoadInOrder` expects five ids/names (`lab-brand`, `Lab Brand` last); `testFrameAndEdgeGlowRoundTrip`; `testPresetWithoutFrameDecodesToNil`.
+  - `BackgroundRendererTests`:
+    - `testEdgeGlowBrightensEdgesAndCorners`: 200x200 source, `paddingPercent 50` (100 px), solid ink, `EdgeGlow(lime, widthPercent 20, opacity 1)` -> canvas 400x400; pixel (3, 200).g > 60; corner (3, 3).g > pixel (3, 200).g; pixel (95, 200) within 4 of ink.
+    - `testBrandFrameAddsBarsAndText`: 600x300 source (reference 450), `paddingPercent 10` -> 45 px, frame `barPercent 10` -> 45 px: canvas 690 x 480. Header band rows 0..<45 contain at least one pixel with g > 200 and r < 240 (lime title) and none of the band's leftmost column is anything but the bar color; footer band rows 435..<480 contain a coral pixel (r > 240, g < 120) in the right quarter and a bone-dim pixel (r in 150...200, g in 150...200) in the left half; picture band pixel (345, 240) is the source color.
+    - `testBrandFrameWithoutFontsStillDrawsBars` is not required (font presence is guaranteed by the bundle test).
+  - `BrandFontTests`: bundle path via `CoreResources.bundle`; expectations unchanged.
+  - `CoreSmokeTests` (resource bundle test): also assert the fonts folder has three `.ttf` files.
+
+- Commit: "Add the Lab Brand preset: edge glow, header and footer bars; fonts move to Core" (mention the Package.swift change in the body).
