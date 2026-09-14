@@ -84,8 +84,9 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 460)
-        .padding(.vertical, 8)
+        // A grouped Form scrolls, so it reports no intrinsic height; without a fixed height the hosting window
+        // collapses to its title bar.
+        .frame(width: 460, height: 430)
     }
 
     private func chooseFolder() {
