@@ -20,7 +20,13 @@ public enum BackgroundPresetLibrary {
     }
 
     private static func presets(in directory: URL) -> [BackgroundPreset] {
-        guard let files = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) else {
+        // A missing folder is the normal case; a folder that exists but cannot be read is worth a log line.
+        guard FileManager.default.fileExists(atPath: directory.path) else { return [] }
+        let files: [URL]
+        do {
+            files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+        } catch {
+            log.error("Cannot read presets folder \(directory.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
             return []
         }
         let decoder = JSONDecoder()

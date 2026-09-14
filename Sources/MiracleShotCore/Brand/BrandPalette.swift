@@ -66,8 +66,8 @@ extension BrandColor: Codable {
     public init(from decoder: Decoder) throws {
         let hex = try decoder.singleValueContainer().decode(String.self)
         guard let color = BrandColor(hex: hex) else {
-            throw DecodingError.dataCorruptedError(in: try decoder.singleValueContainer(),
-                                                   debugDescription: "Not a #rrggbb color: \(hex)")
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
+                                                    debugDescription: "Not a #rrggbb color: \(hex)"))
         }
         self = color
     }

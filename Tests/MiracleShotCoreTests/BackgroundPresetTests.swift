@@ -19,7 +19,15 @@ final class BackgroundPresetTests: XCTestCase {
     }
 
     func testBrandColorRejectsInvalidHex() {
-        XCTAssertThrowsError(try JSONDecoder().decode(BrandColor.self, from: Data("\"#zz\"".utf8)))
+        for bad in ["\"#zz\"", "\"#fff\"", "\"#gggggg\""] {
+            XCTAssertThrowsError(try JSONDecoder().decode(BrandColor.self, from: Data(bad.utf8)), bad)
+        }
+    }
+
+    func testSolidPresetRoundTripsThroughJSON() throws {
+        let preset = BackgroundPreset(id: "s", name: "S", fill: .solid(color: BrandPalette.ink), padding: 8, cornerRadius: 4, shadow: nil)
+        let data = try JSONEncoder().encode(preset)
+        XCTAssertEqual(try JSONDecoder().decode(BackgroundPreset.self, from: data), preset)
     }
 
     func testPresetRoundTripsThroughJSON() throws {
