@@ -33,6 +33,17 @@ enum TestImages {
         return RGBA(r: straight(data[i]), g: straight(data[i + 1]), b: straight(data[i + 2]), a: a)
     }
 
+    /// One channel of every pixel as a top-down 2D array; far cheaper than calling `pixel` in a loop.
+    /// `channel` 0...3 = R, G, B, A (premultiplied, fine for opaque images).
+    static func channel(_ image: CGImage, _ channel: Int) -> [[UInt8]] {
+        let ctx = context(width: image.width, height: image.height)
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        let data = ctx.data!.assumingMemoryBound(to: UInt8.self)
+        return (0..<image.height).map { y in
+            (0..<image.width).map { x in data[y * ctx.bytesPerRow + x * 4 + channel] }
+        }
+    }
+
     /// Top half `top`, bottom half `bottom`; used to prove orientation handling.
     static func splitHorizontally(width: Int, height: Int, top: RGBA, bottom: RGBA) -> CGImage {
         let ctx = context(width: width, height: height)

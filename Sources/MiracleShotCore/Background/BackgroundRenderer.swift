@@ -197,7 +197,9 @@ public enum BackgroundRenderer {
             for y in 0..<height {
                 for x in 0..<width {
                     let dstOffset = y * bytesPerRow8 + x * 4
-                    for c in 0..<4 {
+                    // The fill is opaque; alpha is written directly instead of going through the dither.
+                    outBase.storeBytes(of: UInt8(255), toByteOffset: dstOffset + 3, as: UInt8.self)
+                    for c in 0..<3 {
                         let noise = ditherNoise(x: x, y: y, channel: c)
                         let level: Double
                         switch format {
@@ -222,16 +224,18 @@ public enum BackgroundRenderer {
                        provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
     }
 
-    /// Triangular noise in (-0.5, 0.5): the sum of two independent, deterministic 0..<1 hashes minus 1, halved.
+    /// Triangular noise in (-0.5, 0.5): the mean of two independent 0..<1 hashes of the same pixel minus a half.
+    /// Both hashes take the same coordinates with different salts; sharing a neighbour's hash instead would
+    /// correlate adjacent pixels and show as horizontal streaks.
     private static func ditherNoise(x: Int, y: Int, channel: Int) -> Double {
-        (hash01(x, y, channel) + hash01(x + 1, y, channel)) / 2 - 0.5
+        (hash01(x, y, channel, salt: 0xA511_E9B3) + hash01(x, y, channel, salt: 0x27D4_EB2F)) / 2 - 0.5
     }
 
     /// Cheap integer hash, deterministic across runs (tests need no randomness), mapped to 0..<1 via its top bits.
-    private static func hash01(_ x: Int, _ y: Int, _ channel: Int) -> Double {
+    private static func hash01(_ x: Int, _ y: Int, _ channel: Int, salt: UInt32) -> Double {
         let ux = UInt32(truncatingIfNeeded: x), uy = UInt32(truncatingIfNeeded: y), uc = UInt32(truncatingIfNeeded: channel)
-        var h = ux &* 73_856_093
-        h ^= uy &* 19_349_663
+        var h = (ux &+ salt) &* 73_856_093
+        h ^= (uy ^ salt) &* 19_349_663
         h ^= uc &* 83_492_791
         h = h &* 2_654_435_761
         return Double(h >> 8) / Double(1 << 24)

@@ -149,4 +149,34 @@ final class BackgroundRendererTests: XCTestCase {
         p.glows = [GradientGlow(color: BrandPalette.lime, x: 2, y: 0, radius: 0.3, opacity: 1)]
         XCTAssertNil(BackgroundRenderer.render(source(), preset: p, scale: 1))
     }
+
+    /// Neighbouring pixels must not share dither noise: a lag-1 correlation shows up as horizontal streaks.
+    func testDitherNoiseIsUncorrelatedBetweenNeighbours() throws {
+        let fill = BackgroundPreset.Fill.linearGradient(stops: [GradientStop(color: BrandPalette.ink, location: 0),
+                                                                GradientStop(color: BrandPalette.ink2, location: 1)], angle: 90)
+        let out = try XCTUnwrap(BackgroundRenderer.render(source(2, 2), preset: preset(fill: fill, padding: 300), scale: 1))
+        // Residual = pixel minus the column mean, so the ramp itself does not count as correlation.
+        let width = 200, height = 200
+        let red = TestImages.channel(out, 0)
+        var residual = [[Double]](repeating: [Double](repeating: 0, count: width), count: height)
+        for x in 0..<width {
+            let column = (0..<height).map { Double(red[$0][x + 20]) }
+            let mean = column.reduce(0, +) / Double(height)
+            for y in 0..<height { residual[y][x] = column[y] - mean }
+        }
+        func correlation(dx: Int, dy: Int) -> Double {
+            var num = 0.0, den = 0.0
+            for y in 0..<(height - dy) {
+                for x in 0..<(width - dx) {
+                    num += residual[y][x] * residual[y + dy][x + dx]
+                    den += residual[y][x] * residual[y][x]
+                }
+            }
+            return den == 0 ? 0 : num / den
+        }
+        XCTAssertGreaterThan(correlation(dx: 0, dy: 0), 0.99)
+        XCTAssertLessThan(abs(correlation(dx: 1, dy: 0)), 0.1)
+        XCTAssertLessThan(abs(correlation(dx: 0, dy: 1)), 0.1)
+        XCTAssertLessThan(abs(correlation(dx: 2, dy: 0)), 0.1)
+    }
 }
