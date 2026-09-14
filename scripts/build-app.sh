@@ -20,12 +20,18 @@ for bundle in "$(dirname "$BIN")"/MiracleShot_*.bundle; do
   [ -d "$bundle" ] && cp -R "$bundle" "$OUT/Contents/Resources/"
 done
 
+# App icon: drawn by scripts/make-icon.swift so no binary lives in the repo.
+rm -rf build/AppIcon.iconset
+swift scripts/make-icon.swift build/AppIcon.iconset >/dev/null
+iconutil -c icns build/AppIcon.iconset -o "$OUT/Contents/Resources/AppIcon.icns"
+
 cat > "$OUT/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
   <key>CFBundleName</key><string>$APP_NAME</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundleDisplayName</key><string>$APP_NAME</string>
   <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
   <key>CFBundleExecutable</key><string>MiracleShot</string>
