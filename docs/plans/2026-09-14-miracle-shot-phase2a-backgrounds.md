@@ -847,6 +847,16 @@ and add:
 
 **Step 3: Pop the menu**
 
+`hoverChanged` must ignore the mouseExited the open menu triggers, or the countdown restarts underneath it:
+
+```swift
+    private func hoverChanged(_ inside: Bool) {
+        // The open menu steals the pointer and sends a mouseExited that must not restart the countdown.
+        guard !isShowingBackgroundMenu else { return }
+        if inside { timing?.hoverBegan(now: Self.now()) } else { timing?.hoverEnded(now: Self.now()) }
+    }
+```
+
 In `buttonPressed(_:)`:
 
 ```swift
@@ -859,6 +869,8 @@ In `buttonPressed(_:)`:
 Add:
 
 ```swift
+    private var isShowingBackgroundMenu = false
+
     private func showBackgroundMenu(from button: NSView) {
         guard current != nil else { return }
         let menu = NSMenu()
@@ -872,11 +884,15 @@ Add:
             }
             menu.addItem(item)
         }
-        // The menu runs its own event loop and the panel gets a mouseExited on the way in; hold the timer so the
-        // preview cannot close underneath the open menu.
+        // The menu runs its own event loop; hold the countdown while it is open (see `hoverChanged`) and resume it
+        // afterwards only if the pointer left the panel, otherwise the usual mouseExited will do it later.
+        isShowingBackgroundMenu = true
         timing?.hoverBegan(now: Self.now())
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.height + 4), in: button)
-        timing?.hoverEnded(now: Self.now())
+        isShowingBackgroundMenu = false
+        if let panel, !panel.frame.contains(NSEvent.mouseLocation) {
+            timing?.hoverEnded(now: Self.now())
+        }
     }
 
     @objc private func backgroundChosen(_ sender: NSMenuItem) {

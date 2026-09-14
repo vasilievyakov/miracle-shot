@@ -4,7 +4,7 @@ import MiracleShotCore
 @MainActor
 public final class QuickPreviewPanel: PreviewPresenting {
     public enum Action: CaseIterable, Sendable {
-        case edit, pin, ocr, ai, reveal
+        case edit, pin, ocr, ai, background, reveal
 
         var title: String {
             switch self {
@@ -12,6 +12,7 @@ public final class QuickPreviewPanel: PreviewPresenting {
             case .pin: return "Pin"
             case .ocr: return "OCR"
             case .ai: return "AI"
+            case .background: return "Background"
             case .reveal: return "Reveal"
             }
         }
@@ -22,12 +23,17 @@ public final class QuickPreviewPanel: PreviewPresenting {
     /// Buttons are shown for exactly these actions, in `Action.allCases` order.
     public var handlers: [Action: Handler] = [:]
     public var timeout: TimeInterval = 6
+    /// Presets offered by the Background button; the button is hidden when this is empty or no handler is set.
+    public var backgroundPresets: [BackgroundPreset] = []
+    /// Called with the previewed capture and the chosen preset. The panel dismisses itself first.
+    public var onApplyBackground: (@MainActor (Capture, URL?, BackgroundPreset) -> Void)?
 
     private var panel: NSPanel?
     private var timing: PreviewTiming?
     private var timer: Timer?
     private var onDismiss: (@MainActor () -> Void)?
     private var current: (capture: Capture, fileURL: URL?)?
+    private var isShowingBackgroundMenu = false
 
     public init() {}
 
@@ -36,8 +42,7 @@ public final class QuickPreviewPanel: PreviewPresenting {
         self.onDismiss = onDismiss
         current = (capture, fileURL)
 
-        // Reveal needs a file on disk; a failed save leaves nothing to reveal.
-        let buttons = Action.allCases.filter { handlers[$0] != nil && ($0 != .reveal || fileURL != nil) }.map { action -> BrandButton in
+        let buttons = Action.allCases.filter { isVisible($0, fileURL: fileURL) }.map { action -> BrandButton in
             let b = BrandButton(title: action.title, target: self, action: #selector(buttonPressed(_:)))
             b.tag = Action.allCases.firstIndex(of: action)!
             return b
@@ -110,11 +115,54 @@ public final class QuickPreviewPanel: PreviewPresenting {
     }
 
     private func hoverChanged(_ inside: Bool) {
+        // The open menu steals the pointer and sends a mouseExited that must not restart the countdown.
+        guard !isShowingBackgroundMenu else { return }
         if inside { timing?.hoverBegan(now: Self.now()) } else { timing?.hoverEnded(now: Self.now()) }
     }
 
+    private func isVisible(_ action: Action, fileURL: URL?) -> Bool {
+        switch action {
+        case .background: return onApplyBackground != nil && !backgroundPresets.isEmpty
+        case .reveal: return handlers[.reveal] != nil && fileURL != nil   // nothing to reveal after a failed save
+        default: return handlers[action] != nil
+        }
+    }
+
     @objc private func buttonPressed(_ sender: NSButton) {
-        run(Action.allCases[sender.tag])
+        let action = Action.allCases[sender.tag]
+        if action == .background { showBackgroundMenu(from: sender) } else { run(action) }
+    }
+
+    private func showBackgroundMenu(from button: NSView) {
+        guard current != nil else { return }
+        let menu = NSMenu()
+        for (index, preset) in backgroundPresets.enumerated() {
+            let item = NSMenuItem(title: preset.name, action: #selector(backgroundChosen(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = index
+            // Rendered at 2x so the tile stays crisp on Retina menus.
+            if let swatch = BackgroundRenderer.swatch(preset, size: 28) {
+                item.image = NSImage(cgImage: swatch, size: NSSize(width: 14, height: 14))
+            }
+            menu.addItem(item)
+        }
+        // The menu runs its own event loop; hold the countdown while it is open (see `hoverChanged`) and resume it
+        // afterwards only if the pointer left the panel, otherwise the usual mouseExited will do it later.
+        isShowingBackgroundMenu = true
+        timing?.hoverBegan(now: Self.now())
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.height + 4), in: button)
+        isShowingBackgroundMenu = false
+        if let panel, !panel.frame.contains(NSEvent.mouseLocation) {
+            timing?.hoverEnded(now: Self.now())
+        }
+    }
+
+    @objc private func backgroundChosen(_ sender: NSMenuItem) {
+        guard let current, let handler = onApplyBackground, backgroundPresets.indices.contains(sender.tag) else { return }
+        let preset = backgroundPresets[sender.tag]
+        let payload = current
+        dismiss(animated: true)
+        handler(payload.capture, payload.fileURL, preset)
     }
 
     private func run(_ action: Action) {
