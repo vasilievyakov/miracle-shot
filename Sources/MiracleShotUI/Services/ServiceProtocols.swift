@@ -30,11 +30,18 @@ public enum CaptureError: LocalizedError, Equatable, Sendable {
     func capture(_ selection: SelectionResult) async throws -> Capture
     /// Full display under the mouse cursor.
     func captureDisplayUnderCursor() async throws -> Capture
+    /// Full display identified by `displayID`.
+    func captureDisplay(_ displayID: CGDirectDisplayID) async throws -> Capture
 }
 
 @MainActor public protocol SelectionPresenting: AnyObject {
     /// Shows the overlay and suspends until the user finishes or cancels. `nil` means cancelled.
     func present(mode: CaptureMode) async -> SelectionResult?
+}
+
+@MainActor public protocol WindowListProviding: AnyObject {
+    /// On-screen windows, front to back, excluding this process.
+    func onScreenWindows() -> [WindowInfo]
 }
 
 @MainActor public protocol ClipboardServicing: AnyObject {

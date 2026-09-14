@@ -3,7 +3,10 @@ import MiracleShotCore
 
 @MainActor
 final class SelectionPanel: NSPanel {
-    init(screen: NSScreen, mode: CaptureMode, controller: SelectionOverlayController) {
+    let displayID: CGDirectDisplayID
+
+    init(screen: NSScreen, mode: CaptureMode, controller: SelectionOverlayController, windows: [WindowInfo], frozen: CGImage?) {
+        displayID = screen.displayID
         super.init(contentRect: screen.frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         level = .screenSaver
         isOpaque = false
@@ -12,10 +15,14 @@ final class SelectionPanel: NSPanel {
         ignoresMouseEvents = false
         acceptsMouseMovedEvents = true
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-        contentView = SelectionView(screen: screen, mode: mode, controller: controller)
+        contentView = SelectionView(screen: screen, mode: mode, controller: controller, windows: windows, frozen: frozen)
     }
 
     override var canBecomeKey: Bool { true }
+
+    func setFrozen(_ image: CGImage) {
+        (contentView as? SelectionView)?.setFrozen(image)
+    }
 
     /// Key status alone does not route key events to the content view; the first responder must be set explicitly,
     /// otherwise Escape does nothing until the first click.

@@ -17,11 +17,12 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     public func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         let settings = Settings.load()
+        let captureService = ScreenCaptureService()
         coordinator = CaptureCoordinator(
             settings: settings,
             historyURL: Settings.historyURL,
-            capture: ScreenCaptureService(),
-            selection: SelectionOverlayController(),
+            capture: captureService,
+            selection: SelectionOverlayController(capture: captureService, windowList: CGWindowListProvider()),
             clipboard: ClipboardService(),
             files: FileSaveService(),
             notifications: toast,
