@@ -33,6 +33,7 @@ public final class QuickPreviewPanel: PreviewPresenting {
     private var timer: Timer?
     private var onDismiss: (@MainActor () -> Void)?
     private var current: (capture: Capture, fileURL: URL?)?
+    private var isShowingBackgroundMenu = false
 
     public init() {}
 
@@ -114,6 +115,8 @@ public final class QuickPreviewPanel: PreviewPresenting {
     }
 
     private func hoverChanged(_ inside: Bool) {
+        // The open menu steals the pointer and sends a mouseExited that must not restart the countdown.
+        guard !isShowingBackgroundMenu else { return }
         if inside { timing?.hoverBegan(now: Self.now()) } else { timing?.hoverEnded(now: Self.now()) }
     }
 
@@ -143,11 +146,15 @@ public final class QuickPreviewPanel: PreviewPresenting {
             }
             menu.addItem(item)
         }
-        // The menu runs its own event loop and the panel gets a mouseExited on the way in; hold the timer so the
-        // preview cannot close underneath the open menu.
+        // The menu runs its own event loop; hold the countdown while it is open (see `hoverChanged`) and resume it
+        // afterwards only if the pointer left the panel, otherwise the usual mouseExited will do it later.
+        isShowingBackgroundMenu = true
         timing?.hoverBegan(now: Self.now())
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.height + 4), in: button)
-        timing?.hoverEnded(now: Self.now())
+        isShowingBackgroundMenu = false
+        if let panel, !panel.frame.contains(NSEvent.mouseLocation) {
+            timing?.hoverEnded(now: Self.now())
+        }
     }
 
     @objc private func backgroundChosen(_ sender: NSMenuItem) {
