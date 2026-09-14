@@ -80,8 +80,8 @@ MiracleShot/
 ### 3.1 MiracleShotCore
 
 Модели и логика захвата:
-- `Capture` — `CGImage`, `timestamp`, `sourceAppBundleID?`, `sourceWindowTitle?`, `bounds`, `scaleFactor`.
-- `CaptureState` — enum состояний: `idle`, `selecting(mode)`, `capturing`, `previewing(capture)`. Переходы — чистая функция `reduce(state, event) -> state`. Инварианты: нельзя начать второй захват во время первого; Esc из `selecting` ведет в `idle`.
+- `Capture` — `CGImage`, `timestamp`, `sourceAppName?` (отображаемое имя приложения из ScreenCaptureKit; bundle ID не нужен, пока нет фич, завязанных на стабильный идентификатор), `sourceWindowTitle?`, `bounds`, `scaleFactor`.
+- `CaptureState` — enum состояний: `idle`, `selecting(mode)`, `capturing`, `previewing`. Сам `Capture` в состоянии не хранится: его держит координатор как `lastCapture`, чтобы состояние оставалось `Equatable` и дешевым для тестов. Переходы — чистая функция `reduce(state, event) -> state`. Инварианты: нельзя начать второй захват во время первого; Esc из `selecting` ведет в `idle`.
 - `NamingTemplate` — парсит `{date}`, `{time}`, `{app}`, `{seq}`, отдает имя файла. Безопасная замена символов.
 - `SelectionGeometry` — чистая геометрия оверлея: окно под точкой из списка `WindowInfo` (rect, слой, владелец), снап рамки к границам окна с порогом, rect лупы, нормализация выделения при перетаскивании в любую сторону, пересчет между экранами с разным `scaleFactor`.
 - `PreviewTiming` — состояние таймера превью: старт, пауза при наведении, возобновление, истечение.
