@@ -1,8 +1,9 @@
 import AppKit
 import CoreText
+import MiracleShotCore
 import os
 
-/// Brand typefaces from the UI resource bundle (variable TTFs, registered once per process). Every accessor falls
+/// Brand typefaces from the Core resource bundle (variable TTFs, registered once per process). Every accessor falls
 /// back to the system font when a face is missing, so a broken bundle degrades to SF instead of crashing.
 /// Main-actor only: the cached CoreText descriptors are not Sendable, and every caller is a view anyway.
 @MainActor
@@ -28,7 +29,7 @@ public enum BrandFont {
     /// One descriptor per bundled face. Built from the file itself, so a same-named font installed on the machine
     /// (often a static cut without the weight axis) cannot shadow the bundled one the way a family-name lookup would.
     private static let descriptors: [Family: CTFontDescriptor] = {
-        guard let dir = UIResources.bundle.url(forResource: "fonts", withExtension: nil),
+        guard let dir = CoreResources.bundle.url(forResource: "fonts", withExtension: nil),
               let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else {
             return [:]
         }

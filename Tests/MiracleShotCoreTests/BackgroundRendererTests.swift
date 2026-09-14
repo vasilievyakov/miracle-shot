@@ -188,10 +188,10 @@ final class BackgroundRendererTests: XCTestCase {
         // 400x200 source: reference 300, paddingPercent 10 -> 30 px padding -> width 400+60=460.
         let small = try XCTUnwrap(BackgroundRenderer.render(source(400, 200), preset: preset(fill: .solid(color: BrandPalette.lime), paddingPercent: 10), scale: 1))
         XCTAssertEqual(small.width, 460)
-        // 4000x2000 source: reference 3000, paddingPercent 10 -> 300 px padding -> width 4000+600=4600. Same
-        // percentage, proportionally the same look, at 10x the resolution.
-        let large = try XCTUnwrap(BackgroundRenderer.render(source(4000, 2000), preset: preset(fill: .solid(color: BrandPalette.lime), paddingPercent: 10), scale: 1))
-        XCTAssertEqual(large.width, 4600)
+        // 1600x800 source: reference 1200, paddingPercent 10 -> 120 px padding -> width 1600+240=1840. Same
+        // percentage, proportionally the same look, at 4x the resolution (a 5K case takes seconds in debug builds).
+        let large = try XCTUnwrap(BackgroundRenderer.render(source(1600, 800), preset: preset(fill: .solid(color: BrandPalette.lime), paddingPercent: 10), scale: 1))
+        XCTAssertEqual(large.width, 1840)
     }
 
     /// Neighbouring pixels must not share dither noise: a lag-1 correlation shows up as horizontal streaks.
@@ -223,5 +223,76 @@ final class BackgroundRendererTests: XCTestCase {
         XCTAssertLessThan(abs(correlation(dx: 1, dy: 0)), 0.1)
         XCTAssertLessThan(abs(correlation(dx: 0, dy: 1)), 0.1)
         XCTAssertLessThan(abs(correlation(dx: 2, dy: 0)), 0.1)
+    }
+
+    func testEdgeGlowBrightensEdgesAndCorners() throws {
+        // 200x200 source, reference 200, paddingPercent 50 -> 200 * 0.5 = 100 px (above the 24 pt floor) -> canvas
+        // 200+200=400 x 400. No frame, so bar = 0 and the band is the whole canvas.
+        var p = preset(fill: .solid(color: BrandPalette.ink), paddingPercent: 50)
+        p.edgeGlow = EdgeGlow(color: BrandPalette.lime, widthPercent: 20, opacity: 1)
+        let out = try XCTUnwrap(BackgroundRenderer.render(source(200, 200), preset: p, scale: 1))
+        XCTAssertEqual(out.width, 400)
+        XCTAssertEqual(out.height, 400)
+        // blur = reference * widthPercent / 100 = 200 * 20 / 100 = 40 px.
+        let edge = TestImages.pixel(out, x: 3, y: 200)      // 3 px from the left edge of the band
+        let corner = TestImages.pixel(out, x: 3, y: 3)      // 3 px from both the left and top edges
+        XCTAssertGreaterThan(Int(edge.g), 60)
+        XCTAssertGreaterThan(Int(corner.g), Int(edge.g))
+        // 95 px from the left edge, far beyond the 40 px blur (and its 2x inset), so no glow reaches here.
+        TestImages.assertClose(TestImages.pixel(out, x: 95, y: 200), TestImages.RGBA(r: 0x0b, g: 0x0b, b: 0x0c, a: 255), tolerance: 4)
+    }
+
+    func testBrandFrameAddsBarsAndText() throws {
+        // 600x300 source, reference (600+300)/2 = 450. paddingPercent 10 -> 450 * 0.1 = 45 px (above the 24 pt
+        // floor). frame barPercent 10 -> 450 * 0.1 = 45 px (above the 36 pt floor). Canvas: width 600+90=690,
+        // height 300 (source) + 90 (padding) + 90 (bars) = 480.
+        var p = preset(fill: .solid(color: BrandPalette.ink), paddingPercent: 10)
+        p.frame = BrandFrame(title: "AI-LAB", tagline: "Agentic Analytics & Research Lab", footer: "ai-lab-agents.com",
+                             barPercent: 10, barColor: BrandPalette.ink, titleColor: BrandPalette.lime,
+                             textColor: BrandPalette.boneDim, accent: BrandPalette.coral)
+        let out = try XCTUnwrap(BackgroundRenderer.render(source(600, 300), preset: p, scale: 1))
+        XCTAssertEqual(out.width, 690)
+        XCTAssertEqual(out.height, 480)
+
+        let r = TestImages.channel(out, 0)
+        let g = TestImages.channel(out, 1)
+
+        // Header band: pixel rows 0..<45 (top of the image; TestImages.pixel/channel count rows from the top).
+        var sawLimeTitle = false
+        for y in 0..<45 {
+            for x in 0..<out.width where g[y][x] > 200 && r[y][x] < 240 {
+                sawLimeTitle = true
+                break
+            }
+        }
+        XCTAssertTrue(sawLimeTitle, "expected a lime title pixel in the header band")
+        // Title starts at x = inset = max(16, 450 * 8 / 100 = 36) = 36, so column 0 is untouched bar color.
+        for y in 0..<45 {
+            XCTAssertEqual(Int(r[y][0]), 0x0b, accuracy: 2)
+            XCTAssertEqual(Int(g[y][0]), 0x0b, accuracy: 2)
+        }
+
+        // Footer band: pixel rows 435..<480 (bottom of the image).
+        var sawCoral = false
+        for y in 435..<480 {
+            for x in (out.width * 3 / 4)..<out.width where r[y][x] > 240 && g[y][x] < 120 {
+                sawCoral = true
+                break
+            }
+        }
+        XCTAssertTrue(sawCoral, "expected a coral accent pixel in the footer's right quarter")
+
+        var sawBoneDim = false
+        for y in 435..<480 {
+            for x in 0..<(out.width / 2) where (150...200).contains(Int(r[y][x])) && (150...200).contains(Int(g[y][x])) {
+                sawBoneDim = true
+                break
+            }
+        }
+        XCTAssertTrue(sawBoneDim, "expected a bone-dim footer text pixel in the left half")
+
+        // Picture band: the screenshot at x 45..<645, y (CG) 90..<390, i.e. pixel rows 90..<390. (345, 240) is
+        // well inside it.
+        TestImages.assertClose(TestImages.pixel(out, x: 345, y: 240), red)
     }
 }

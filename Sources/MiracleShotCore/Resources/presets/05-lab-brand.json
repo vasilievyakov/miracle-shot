@@ -1,0 +1,19 @@
+{
+  "id": "lab-brand",
+  "name": "Lab Brand",
+  "fill": { "solid": { "color": "#0b0b0c" } },
+  "edgeGlow": { "color": "#d4ff3f", "widthPercent": 8, "opacity": 0.55 },
+  "frame": {
+    "title": "AI-LAB",
+    "tagline": "Agentic Analytics & Research Lab",
+    "footer": "ai-lab-agents.com",
+    "barPercent": 5,
+    "barColor": "#0b0b0c",
+    "titleColor": "#d4ff3f",
+    "textColor": "#b8b4a8",
+    "accent": "#ff5a36"
+  },
+  "paddingPercent": 8,
+  "cornerRadiusPercent": 1.2,
+  "shadow": { "blurPercent": 5, "offsetPercent": 2, "opacity": 0.7 }
+}

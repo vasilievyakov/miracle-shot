@@ -47,8 +47,8 @@ final class BackgroundPresetTests: XCTestCase {
 
     func testBuiltInPresetsLoadInOrder() {
         let presets = BackgroundPresetLibrary.builtIn()
-        XCTAssertEqual(presets.map(\.id), ["lab-dark", "lime", "bone", "coral"])
-        XCTAssertEqual(presets.map(\.name), ["Lab Dark", "Lime", "Bone", "Coral"])
+        XCTAssertEqual(presets.map(\.id), ["lab-dark", "lime", "bone", "coral", "lab-brand"])
+        XCTAssertEqual(presets.map(\.name), ["Lab Dark", "Lime", "Bone", "Coral", "Lab Brand"])
         for preset in presets {
             XCTAssertGreaterThan(preset.paddingPercent, 0, preset.id)
             XCTAssertNotNil(preset.shadow, preset.id)
@@ -93,5 +93,28 @@ final class BackgroundPresetTests: XCTestCase {
     func testLoadWithMissingUserDirectoryReturnsBuiltIns() {
         let missing = FileManager.default.temporaryDirectory.appendingPathComponent("ms-missing-\(UUID().uuidString)")
         XCTAssertEqual(BackgroundPresetLibrary.load(userDirectory: missing), BackgroundPresetLibrary.builtIn())
+    }
+
+    func testFrameAndEdgeGlowRoundTrip() throws {
+        var preset = sample()
+        preset.edgeGlow = EdgeGlow(color: BrandPalette.lime, widthPercent: 8, opacity: 0.55)
+        preset.frame = BrandFrame(title: "AI-LAB", tagline: "Agentic Analytics & Research Lab", footer: "ai-lab-agents.com",
+                                  barPercent: 5, barColor: BrandPalette.ink, titleColor: BrandPalette.lime,
+                                  textColor: BrandPalette.boneDim, accent: BrandPalette.coral)
+        let data = try JSONEncoder().encode(preset)
+        XCTAssertEqual(try JSONDecoder().decode(BackgroundPreset.self, from: data), preset)
+        XCTAssertTrue(preset.colors.contains(BrandPalette.lime))
+        XCTAssertTrue(preset.colors.contains(BrandPalette.ink))
+        XCTAssertTrue(preset.colors.contains(BrandPalette.boneDim))
+        XCTAssertTrue(preset.colors.contains(BrandPalette.coral))
+    }
+
+    func testPresetWithoutFrameDecodesToNil() throws {
+        let json = """
+        {"id":"x","name":"X","fill":{"solid":{"color":"#0b0b0c"}},"paddingPercent":10,"cornerRadiusPercent":0}
+        """
+        let preset = try JSONDecoder().decode(BackgroundPreset.self, from: Data(json.utf8))
+        XCTAssertNil(preset.frame)
+        XCTAssertNil(preset.edgeGlow)
     }
 }
