@@ -14,7 +14,9 @@ final class SelectionView: NSView {
     private let mode: CaptureMode
     unowned let controller: SelectionOverlayController
     private let windows: [WindowInfo]
-    private let frozen: CGImage?
+    private var frozen: CGImage?
+    /// View-space region drawn dynamically last frame (magnifier, highlight, label); only it and the new one repaint.
+    private var lastDynamicRegion: NSRect = .zero
     private var dragStart: CGPoint?
     private var selection: CGRect?
     private var cursor: CGPoint?
@@ -48,28 +50,57 @@ final class SelectionView: NSView {
         if event.keyCode == 53 { controller.finish(with: nil) }   // Escape
     }
 
+    func setFrozen(_ image: CGImage) {
+        frozen = image
+        needsDisplay = true
+    }
+
     override func mouseMoved(with event: NSEvent) {
         cursor = cgPoint(from: event)
         hoveredWindow = cursor.flatMap { SelectionGeometry.window(at: $0, in: windows) }
-        needsDisplay = true
+        invalidateDynamicRegion()
     }
 
     override func mouseDown(with event: NSEvent) {
         window?.makeKey()
         dragStart = cgPoint(from: event)
         selection = nil
-        needsDisplay = true
+        invalidateDynamicRegion()
     }
 
     override func mouseDragged(with event: NSEvent) {
         guard let start = dragStart else { return }
-        cursor = cgPoint(from: event)
-        var rect = SelectionGeometry.rect(from: start, to: cursor!)
+        let point = cgPoint(from: event)
+        cursor = point
+        var rect = SelectionGeometry.rect(from: start, to: point)
         if !event.modifierFlags.contains(.option) {
             rect = SelectionGeometry.snapped(rect, to: windows, threshold: Self.snapThreshold)
         }
         selection = rect
-        needsDisplay = true
+        invalidateDynamicRegion()
+    }
+
+    /// Repaints only the union of the previous and the current dynamic region instead of the whole 5K frame.
+    private func invalidateDynamicRegion() {
+        let region = currentDynamicRegion()
+        setNeedsDisplay(lastDynamicRegion.union(region))
+        lastDynamicRegion = region
+    }
+
+    private func currentDynamicRegion() -> NSRect {
+        var region = NSRect.zero
+        if let highlight = currentHighlight, let viewRect = viewRect(fromCG: highlight) {
+            // The size label sits within 40 pt below or inside the rect.
+            region = region.union(viewRect.insetBy(dx: -40, dy: -40))
+        }
+        if let cursor, let frame = magnifierViewFrame(forCG: cursor) {
+            region = region.union(frame.insetBy(dx: -2, dy: -2))
+        }
+        return region
+    }
+
+    private var currentHighlight: CGRect? {
+        selection ?? (dragStart == nil && mode == .window ? hoveredWindow?.frame : nil)
     }
 
     override func mouseUp(with event: NSEvent) {
@@ -98,8 +129,7 @@ final class SelectionView: NSView {
         BrandPalette.overlayDim.nsColor(alpha: BrandPalette.overlayDimAlpha).setFill()
         bounds.fill()
 
-        let highlight: CGRect? = selection ?? (dragStart == nil && mode == .window ? hoveredWindow?.frame : nil)
-        if let highlight, let viewRect = viewRect(fromCG: highlight) {
+        if let highlight = currentHighlight, let viewRect = viewRect(fromCG: highlight) {
             if let frozen {
                 NSGraphicsContext.saveGraphicsState()
                 viewRect.clip()
@@ -130,21 +160,27 @@ final class SelectionView: NSView {
         let size = (text as NSString).size(withAttributes: attrs)
         var origin = NSPoint(x: viewRect.maxX - size.width - 12, y: viewRect.minY - size.height - 12)
         if origin.y < 4 { origin.y = viewRect.minY + 6 }
+        origin.x = max(6, min(origin.x, bounds.maxX - size.width - 6))
         let box = NSRect(origin: origin, size: size).insetBy(dx: -6, dy: -3)
         BrandPalette.ink2.nsColor().setFill()
         NSBezierPath(roundedRect: box, xRadius: 4, yRadius: 4).fill()
         (text as NSString).draw(at: origin, withAttributes: attrs)
     }
 
-    private func drawMagnifier(at viewCursor: NSPoint, cgCursor: CGPoint) {
-        guard let frozen else { return }
-        let scale = screen.backingScaleFactor
+    /// Magnifier frame in view coordinates for a cursor in CG global coordinates; nil when off this screen.
+    private func magnifierViewFrame(forCG cgCursor: CGPoint) -> NSRect? {
+        guard screenContains(cgCursor) else { return nil }
         let screenBounds = CGRect(origin: .zero, size: bounds.size)
         let cgFrame = SelectionGeometry.magnifierFrame(
             cursor: CGPoint(x: cgCursor.x - screenFrameCG.minX, y: cgCursor.y - screenFrameCG.minY),
             size: Self.magnifierSize, offset: Self.magnifierOffset, in: screenBounds)
         // Local CG (top-left) -> view (bottom-left).
-        let frame = NSRect(x: cgFrame.minX, y: bounds.height - cgFrame.maxY, width: cgFrame.width, height: cgFrame.height)
+        return NSRect(x: cgFrame.minX, y: bounds.height - cgFrame.maxY, width: cgFrame.width, height: cgFrame.height)
+    }
+
+    private func drawMagnifier(at viewCursor: NSPoint, cgCursor: CGPoint) {
+        guard let frozen, let frame = magnifierViewFrame(forCG: cgCursor) else { return }
+        let scale = screen.backingScaleFactor
 
         let half = CGFloat(Self.magnifierPixels) / 2
         let localX = cgCursor.x - screenFrameCG.minX
