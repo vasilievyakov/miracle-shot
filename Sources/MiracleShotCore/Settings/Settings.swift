@@ -14,6 +14,7 @@ public struct Settings: Codable, Sendable, Equatable {
             .captureArea: HotkeySpec(parsing: "shift+cmd+1")!,
             .captureWindow: HotkeySpec(parsing: "shift+cmd+2")!,
             .captureFullScreen: HotkeySpec(parsing: "shift+cmd+0")!,
+            .captureScrolling: HotkeySpec(parsing: "shift+cmd+3")!,
         ],
         saveDirectoryPath: "~/Pictures/Miracle Shot",
         namingTemplate: .default,
@@ -37,7 +38,18 @@ public struct Settings: Codable, Sendable, Equatable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let d = Settings.default
-        hotkeys = try c.decodeIfPresent([CaptureAction: HotkeySpec].self, forKey: .hotkeys) ?? d.hotkeys
+        if let decoded = try c.decodeIfPresent([CaptureAction: HotkeySpec].self, forKey: .hotkeys) {
+            // An older file predates a newer action and simply has no entry for it. Fill it in from the default,
+            // unless the user already bound that default combination to a different action of theirs.
+            var merged = decoded
+            let usedSpecs = Set(decoded.values)
+            for (action, spec) in d.hotkeys where merged[action] == nil && !usedSpecs.contains(spec) {
+                merged[action] = spec
+            }
+            hotkeys = merged
+        } else {
+            hotkeys = d.hotkeys
+        }
         saveDirectoryPath = try c.decodeIfPresent(String.self, forKey: .saveDirectoryPath) ?? d.saveDirectoryPath
         namingTemplate = try c.decodeIfPresent(NamingTemplate.self, forKey: .namingTemplate) ?? d.namingTemplate
         previewTimeout = try c.decodeIfPresent(TimeInterval.self, forKey: .previewTimeout) ?? d.previewTimeout

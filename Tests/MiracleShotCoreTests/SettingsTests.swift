@@ -74,4 +74,28 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(Settings.load(from: url), .default)
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.appendingPathExtension("broken").path))
     }
+
+    func testDefaultHotkeyForScrollingCapture() {
+        XCTAssertEqual(Settings.default.hotkeys[.captureScrolling]?.description, "shift+cmd+3")
+    }
+
+    /// Simulates a settings.json written before `.captureScrolling` existed: its hotkeys dictionary has only the
+    /// three old actions, exactly what an old file decoded into `[CaptureAction: HotkeySpec]` would produce.
+    func testLoadingOldFileFillsInScrollingHotkey() throws {
+        var old = Settings.default
+        old.hotkeys.removeValue(forKey: .captureScrolling)
+        let data = try JSONEncoder().encode(old)
+        let s = try JSONDecoder().decode(Settings.self, from: data)
+        XCTAssertEqual(s.hotkeys[.captureScrolling]?.description, "shift+cmd+3")
+    }
+
+    func testLoadingOldFileDoesNotStealATakenHotkey() throws {
+        var old = Settings.default
+        old.hotkeys.removeValue(forKey: .captureScrolling)
+        old.hotkeys[.captureWindow] = HotkeySpec(parsing: "shift+cmd+3")
+        let data = try JSONEncoder().encode(old)
+        let s = try JSONDecoder().decode(Settings.self, from: data)
+        XCTAssertNil(s.hotkeys[.captureScrolling])
+        XCTAssertEqual(s.hotkeys[.captureWindow]?.description, "shift+cmd+3")
+    }
 }

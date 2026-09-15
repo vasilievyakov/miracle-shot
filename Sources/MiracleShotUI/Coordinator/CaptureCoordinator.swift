@@ -23,6 +23,7 @@ public final class CaptureCoordinator {
     private let notifications: NotificationPosting
     private let preview: PreviewPresenting
     private let ocr: OCRServicing
+    private let scroll: ScrollCapturing
     /// Per-process counter for the `{seq}` template token. It resets on relaunch; `FileSaveService` makes names
     /// unique on disk, so a repeated number can never overwrite a file.
     private var sequence = 0
@@ -31,7 +32,7 @@ public final class CaptureCoordinator {
 
     public init(settings: Settings, historyURL: URL, capture: CaptureServicing, selection: SelectionPresenting,
                 clipboard: ClipboardServicing, files: FileSaving, notifications: NotificationPosting,
-                preview: PreviewPresenting, ocr: OCRServicing) {
+                preview: PreviewPresenting, ocr: OCRServicing, scroll: ScrollCapturing) {
         self.settings = settings
         self.historyURL = historyURL
         self.history = HistoryIndex.load(from: historyURL, limit: settings.historyLimit)
@@ -42,6 +43,7 @@ public final class CaptureCoordinator {
         self.notifications = notifications
         self.preview = preview
         self.ocr = ocr
+        self.scroll = scroll
     }
 
     public func perform(_ action: CaptureAction) async {
@@ -51,6 +53,11 @@ public final class CaptureCoordinator {
             notifications.post(title: "Screen Recording permission needed",
                                body: "Allow Miracle Shot in System Settings > Privacy & Security > Screen Recording.",
                                isError: true)
+            return
+        }
+
+        if action == .captureScrolling {
+            await performScrollingCapture()
             return
         }
 
@@ -132,6 +139,39 @@ public final class CaptureCoordinator {
     }
 
     // MARK: - Private
+
+    /// Scrolling capture needs a window, not an area, so a dragged selection is treated as a cancel with an
+    /// explanatory notification instead of being handed to the capture service. Success goes through the same
+    /// `finish` path as every other capture; a fallback stitch gets its own quiet notification afterwards.
+    private func performScrollingCapture() async {
+        transition(.hotkey(.window))
+        guard let selected = await selection.present(mode: .window) else {
+            transition(.selectionCancelled)
+            return
+        }
+        guard case .window(let info) = selected else {
+            transition(.selectionCancelled)
+            notifications.post(title: "Click a window to capture scrolling content",
+                               body: "Scrolling capture needs a window.", isError: false)
+            return
+        }
+        transition(.selectionMade)
+        do {
+            let scrolled = try await scroll.captureScrolling(window: info)
+            transition(.captureSucceeded)
+            finish(scrolled.capture)
+            if scrolled.usedFallback {
+                notifications.post(title: "Some parts could not be aligned and were appended",
+                                   body: "Some rows did not line up between two frames and were stacked as-is.",
+                                   isError: false)
+            }
+        } catch CaptureError.cancelled {
+            transition(.captureFailed)
+        } catch {
+            transition(.captureFailed)
+            notifications.post(title: "Capture failed", body: error.localizedDescription, isError: true)
+        }
+    }
 
     private func transition(_ event: CaptureEvent) {
         state = CaptureStateMachine.reduce(state, event)

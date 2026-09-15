@@ -134,3 +134,16 @@ func makeCapture() -> Capture {
         self.onDismiss = onDismiss
     }
 }
+
+@MainActor final class FakeScrollCapture: ScrollCapturing {
+    let log: CallLog
+    var result = ScrollCaptureResult(capture: makeCapture(), usedFallback: false)
+    var error: Error?
+    init(log: CallLog) { self.log = log }
+
+    func captureScrolling(window: WindowInfo) async throws -> ScrollCaptureResult {
+        log.add("scroll(\(window.id))")
+        if let error { throw error }
+        return result
+    }
+}
