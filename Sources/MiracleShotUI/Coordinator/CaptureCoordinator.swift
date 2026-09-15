@@ -22,6 +22,7 @@ public final class CaptureCoordinator {
     private let files: FileSaving
     private let notifications: NotificationPosting
     private let preview: PreviewPresenting
+    private let ocr: OCRServicing
     /// Per-process counter for the `{seq}` template token. It resets on relaunch; `FileSaveService` makes names
     /// unique on disk, so a repeated number can never overwrite a file.
     private var sequence = 0
@@ -30,7 +31,7 @@ public final class CaptureCoordinator {
 
     public init(settings: Settings, historyURL: URL, capture: CaptureServicing, selection: SelectionPresenting,
                 clipboard: ClipboardServicing, files: FileSaving, notifications: NotificationPosting,
-                preview: PreviewPresenting) {
+                preview: PreviewPresenting, ocr: OCRServicing) {
         self.settings = settings
         self.historyURL = historyURL
         self.history = HistoryIndex.load(from: historyURL, limit: settings.historyLimit)
@@ -40,6 +41,7 @@ public final class CaptureCoordinator {
         self.files = files
         self.notifications = notifications
         self.preview = preview
+        self.ocr = ocr
     }
 
     public func perform(_ action: CaptureAction) async {
@@ -111,6 +113,22 @@ public final class CaptureCoordinator {
         let shot = Capture(image: image, sourceAppName: source.sourceAppName, sourceWindowTitle: source.sourceWindowTitle,
                            bounds: CGRect(origin: source.bounds.origin, size: size), scaleFactor: source.scaleFactor)
         finish(shot)
+    }
+
+    /// Recognizes text in `capture`; the result goes to the clipboard as plain text with a notification showing
+    /// the first lines. No text: a notification and the clipboard is left alone. Does not change `state`.
+    public func recognizeText(in capture: Capture) async {
+        do {
+            let result = try await ocr.recognize(capture.image)
+            guard !result.isEmpty else {
+                notifications.post(title: "No text found", body: "Try a sharper capture or larger text.", isError: false)
+                return
+            }
+            clipboard.copyText(result.text)
+            notifications.post(title: "Text copied", body: result.preview(lines: 3), isError: false)
+        } catch {
+            notifications.post(title: "Text recognition failed", body: error.localizedDescription, isError: true)
+        }
     }
 
     // MARK: - Private

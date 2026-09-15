@@ -46,6 +46,11 @@ public enum CaptureError: LocalizedError, Equatable, Sendable {
 
 @MainActor public protocol ClipboardServicing: AnyObject {
     func copy(_ capture: Capture)
+    func copyText(_ text: String)
+}
+
+@MainActor public protocol OCRServicing: AnyObject {
+    func recognize(_ image: CGImage) async throws -> OCRResult
 }
 
 @MainActor public protocol FileSaving: AnyObject {
