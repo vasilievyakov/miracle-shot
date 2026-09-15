@@ -24,8 +24,8 @@ public enum ImageStitcher {
     private static let maxStickyFraction = 0.1
 
     /// Stitches vertically scrolled frames of the same width. One frame returns itself.
-    /// Steps: (1) static header/footer = leading/trailing rows identical (row difference <= `staticTolerance`)
-    /// across all consecutive pairs, capped at 40 percent of the height each; (2) each new frame is matched
+    /// Steps: (1) static header/footer = leading/trailing rows alike (row difference <= `matchTolerance`) in the
+    /// median consecutive pair, capped at 40 percent of the height each; (2) each new frame is matched
     /// against the page collected so far: an overlap `d` (rows) in `minOverlap...(dynamicHeight - 1)` where the
     /// last `d` dynamic rows of the page's bottom frame match the first `d` rows of the new frame with mean
     /// absolute difference <= `matchTolerance` (per-row byte sums reject candidates cheaply, full comparison
@@ -53,7 +53,9 @@ public enum ImageStitcher {
 
         let sums = buffers.map(rowSums)
 
-        let (headerRows, footerRows) = staticEdges(buffers, tolerance: staticTolerance)
+        // Edges are judged with the match tolerance: translucent chrome shifts by a few levels with whatever is
+        // behind the window, which must not count as a change.
+        let (headerRows, footerRows) = staticEdges(buffers, tolerance: matchTolerance)
 
         var usedFallback = false
         let dynStart = headerRows
@@ -185,25 +187,31 @@ public enum ImageStitcher {
 
     // MARK: - Static header/footer
 
-    /// Largest `h` (<= 40 percent of the smaller frame's height) such that, for every consecutive pair, rows
-    /// `0..<h` match within `tolerance`; footer likewise counted from the bottom. Computed per pair, then the
-    /// minimum across all pairs is kept.
+    /// Largest `h` (<= 40 percent of the smaller frame's height) such that rows `0..<h` of a consecutive pair
+    /// match within `tolerance`; footer likewise counted from the bottom. Computed per pair, then the median
+    /// across pairs is kept: a single odd frame (a tooltip, a hover, a backdrop change) must not erase the
+    /// header for the whole capture.
     private static func staticEdges(_ buffers: [FrameBuffer], tolerance: Double) -> (header: Int, footer: Int) {
-        var header = Int.max
-        var footer = Int.max
+        var headers: [Int] = []
+        var footers: [Int] = []
         for i in 0..<(buffers.count - 1) {
             let a = buffers[i], b = buffers[i + 1]
             let cap = Int(Double(min(a.height, b.height)) * maxStaticFraction)
 
             var h = 0
             while h < cap, rowDifference(a, h, b, h) <= tolerance { h += 1 }
-            header = min(header, h)
+            headers.append(h)
 
             var f = 0
             while f < cap, rowDifference(a, a.height - 1 - f, b, b.height - 1 - f) <= tolerance { f += 1 }
-            footer = min(footer, f)
+            footers.append(f)
         }
-        return (max(0, header), max(0, footer))
+        return (lowerMedian(headers), lowerMedian(footers))
+    }
+
+    private static func lowerMedian(_ values: [Int]) -> Int {
+        let sorted = values.sorted()
+        return sorted.isEmpty ? 0 : sorted[(sorted.count - 1) / 2]
     }
 
     // MARK: - Overlap search
