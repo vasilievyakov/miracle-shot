@@ -9,4 +9,8 @@ mkdir -p "$DEST"
 curl -fsSL "$BASE/onest/Onest%5Bwght%5D.ttf" -o "$DEST/Onest-Variable.ttf"
 curl -fsSL "$BASE/jetbrainsmono/JetBrainsMono%5Bwght%5D.ttf" -o "$DEST/JetBrainsMono-Variable.ttf"
 curl -fsSL "$BASE/geologica/Geologica%5BCRSV,SHRP,slnt,wght%5D.ttf" -o "$DEST/Geologica-Variable.ttf"
+# The SIL Open Font License asks for its text to travel with the fonts.
+for family in onest jetbrainsmono geologica; do
+  curl -fsSL "$BASE/$family/OFL.txt" -o "$DEST/OFL-$family.txt"
+done
 ls -la "$DEST"
