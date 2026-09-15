@@ -43,6 +43,18 @@ public final class EditorWindowController: NSObject, NSWindowDelegate {
         let canvas = EditorCanvasView(session: session)
         let toolbar = EditorToolbar(presets: presets)
 
+        let scrollView = NSScrollView()
+        scrollView.documentView = canvas
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.scrollerStyle = .overlay
+        scrollView.drawsBackground = true
+        scrollView.backgroundColor = BrandPalette.ink.nsColor()
+        scrollView.allowsMagnification = false
+        scrollView.borderType = .noBorder
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+
         let window = EditorWindow(canvas: canvas, contentRect: Self.windowRect(for: capture),
                                   styleMask: [.titled, .closable, .resizable, .miniaturizable])
         window.title = "Miracle Shot Editor"
@@ -51,14 +63,14 @@ public final class EditorWindowController: NSObject, NSWindowDelegate {
         window.backgroundColor = BrandPalette.ink.nsColor()
         window.delegate = self
 
-        let stack = NSStackView(views: [toolbar, canvas])
+        let stack = NSStackView(views: [toolbar, scrollView])
         stack.orientation = .vertical
         stack.spacing = 0
         NSLayoutConstraint.activate([
             toolbar.leadingAnchor.constraint(equalTo: stack.leadingAnchor),
             toolbar.trailingAnchor.constraint(equalTo: stack.trailingAnchor),
-            canvas.leadingAnchor.constraint(equalTo: stack.leadingAnchor),
-            canvas.trailingAnchor.constraint(equalTo: stack.trailingAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: stack.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: stack.trailingAnchor),
         ])
         window.contentView = stack
 
@@ -66,6 +78,7 @@ public final class EditorWindowController: NSObject, NSWindowDelegate {
             guard let toolbar, let canvas else { return }
             toolbar.refresh(from: canvas.session)
         }
+        canvas.onZoomChange = { [weak toolbar] label in toolbar?.setZoomLabel(label) }
         toolbar.onEvent = { [weak canvas] event in canvas?.send(event) }
         toolbar.onCopy = { [weak self] in self?.copy() }
         toolbar.onDone = { [weak self] in self?.done() }
@@ -178,6 +191,9 @@ private final class EditorWindow: NSWindow {
             if let selector = editing[key] {
                 return NSApp.sendAction(selector, to: nil, from: nil)
             }
+        } else if let zoomAction = EditorShortcuts.zoomAction(forKey: key, modifiers: event.modifierFlags) {
+            canvas.applyZoomAction(zoomAction)
+            return true
         }
         switch key {
         case "c":
