@@ -167,6 +167,35 @@ final class ImageStitcherTests: XCTestCase {
         }
     }
 
+    /// A blinking cursor or a spinner changes a few pixels of one row between two frames. That row alone may
+    /// differ by more than the tolerance, but the band's mean stays far below it, so the true overlap must still
+    /// be found instead of falling back to concatenation.
+    func testNoisyRowInsideTheOverlapStillMatches() throws {
+        let width = Page.width
+        let overlap = 40
+        func page(_ x: Int, _ y: Int) -> (UInt8, UInt8, UInt8) { Noise.color(x: x, y: y, salt: 0x77) }
+        let a = render(width: width, rows: 0..<200, colorAt: page)
+        let noisyRow = 200 - overlap + 20
+        let b = render(width: width, rows: (200 - overlap)..<360) { x, y in
+            y == noisyRow && x < 24 ? (255, 255, 255) : page(x, y)
+        }
+
+        let result = try XCTUnwrap(ImageStitcher.stitch([a, b]))
+        XCTAssertFalse(result.usedFallback)
+        XCTAssertEqual(result.image.height, 360)
+    }
+
+    func testFramesOfDifferentHeightsStitch() throws {
+        let width = Page.width
+        func page(_ x: Int, _ y: Int) -> (UInt8, UInt8, UInt8) { Noise.color(x: x, y: y, salt: 0x88) }
+        let a = render(width: width, rows: 0..<200, colorAt: page)
+        let b = render(width: width, rows: 160..<310, colorAt: page)
+
+        let result = try XCTUnwrap(ImageStitcher.stitch([a, b]))
+        XCTAssertFalse(result.usedFallback)
+        XCTAssertEqual(result.image.height, 310)
+    }
+
     /// Frames that are otherwise a solid color, each with one distinct band. Most rows are pixel-identical
     /// between the two frames (gray == gray) no matter how they are aligned, so a matcher that only samples a
     /// few rows per candidate offset could report a match almost anywhere. Only the offset that truly lines up

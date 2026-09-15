@@ -18,15 +18,13 @@ public enum ImageStitcher {
     private static let sRGB = CGColorSpace(name: CGColorSpace.sRGB)!
     /// Static header/footer are each capped at this fraction of the (smaller) frame height in a pair.
     private static let maxStaticFraction = 0.4
-    /// Row signatures are quick-rejected on this many evenly spaced samples within the overlap band.
-    private static let quickRejectSamples = 4
 
     /// Stitches vertically scrolled frames of the same width. One frame returns itself.
     /// Steps: (1) static header/footer = leading/trailing rows identical (row difference <= `staticTolerance`)
     /// across all consecutive pairs, capped at 40 percent of the height each; (2) for each consecutive pair find
     /// the overlap `d` (rows) in `minOverlap...(dynamicHeight - 1)` such that the last `d` dynamic rows of A match
-    /// the first `d` dynamic rows of B with mean absolute difference <= `matchTolerance` (row signatures narrow the
-    /// candidates, full comparison confirms; prefer the largest matching `d`); (3) append B's dynamic rows after
+    /// the first `d` dynamic rows of B with mean absolute difference <= `matchTolerance` (per-row byte sums reject
+    /// candidates cheaply, full comparison confirms; prefer the largest matching `d`); (3) append B's dynamic rows after
     /// `d`; (4) reattach the header at the top and the footer at the bottom. A pair without a match is appended
     /// whole and `usedFallback` becomes true. Frames whose dynamic part fully repeats the previous one are skipped.
     public static func stitch(_ frames: [CGImage], minOverlap: Int = 8, matchTolerance: Double = 6.0 / 255,
@@ -46,7 +44,7 @@ public enum ImageStitcher {
             buffers.append(buffer)
         }
 
-        let signatures = buffers.map(rowSignatures)
+        let sums = buffers.map(rowSums)
 
         let (headerRows, footerRows) = staticEdges(buffers, tolerance: staticTolerance)
 
@@ -73,8 +71,8 @@ public enum ImageStitcher {
                 continue // this frame's dynamic content fully repeats the last kept frame; skip it
             }
 
-            let overlap = findOverlap(keptBuffer, keptDynEnd, signatures[keptIndex],
-                                      buffer, dynStart, signatures[i],
+            let overlap = findOverlap(keptBuffer, keptDynEnd, sums[keptIndex],
+                                      buffer, dynStart, sums[i],
                                       maxOverlap: min(keptDynHeight, dynHeight) - 1,
                                       minOverlap: minOverlap, width: width, matchTolerance: matchTolerance)
 
@@ -120,7 +118,10 @@ public enum ImageStitcher {
               let data = ctx.data else { return nil }
         ctx.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
         let bytesPerRow = ctx.bytesPerRow
-        let bytes = [UInt8](UnsafeBufferPointer(start: data.assumingMemoryBound(to: UInt8.self), count: bytesPerRow * height))
+        // `data` is only valid while the context lives; keep it alive through the copy.
+        let bytes = withExtendedLifetime(ctx) {
+            [UInt8](UnsafeBufferPointer(start: data.assumingMemoryBound(to: UInt8.self), count: bytesPerRow * height))
+        }
         return FrameBuffer(width: width, height: height, bytesPerRow: bytesPerRow, bytes: bytes)
     }
 
@@ -178,63 +179,49 @@ public enum ImageStitcher {
 
     // MARK: - Overlap search
 
-    private struct RowSignature { let hash: UInt64; let sum: UInt32 }
-
-    /// Per-row signature: a 64-bit hash over every 8th pixel's RGB (cheap structural fingerprint) and the sum of
-    /// every RGB byte in the row (used as a safe lower-bound proxy for the row's total absolute difference).
-    private static func rowSignatures(_ buffer: FrameBuffer) -> [RowSignature] {
-        (0..<buffer.height).map { row -> RowSignature in
+    /// Sum of every RGB byte in each row. |sum(a) - sum(b)| <= sum(|a - b|), so the difference of two row sums
+    /// is a lower bound on the row's total absolute difference and can reject a candidate without touching pixels.
+    private static func rowSums(_ buffer: FrameBuffer) -> [Int] {
+        (0..<buffer.height).map { row -> Int in
             let base = row * buffer.bytesPerRow
-            var hash: UInt64 = 14_695_981_039_346_656_37
-            var sum: UInt32 = 0
+            var sum = 0
             buffer.bytes.withUnsafeBufferPointer { bytes in
-                var x = 0
-                while x < buffer.width {
-                    let i = base + x * 4
-                    hash = (hash ^ UInt64(bytes[i])) &* 1_099_511_628_211
-                    hash = (hash ^ UInt64(bytes[i + 1])) &* 1_099_511_628_211
-                    hash = (hash ^ UInt64(bytes[i + 2])) &* 1_099_511_628_211
-                    x += 8
-                }
                 for x in 0..<buffer.width {
                     let i = base + x * 4
-                    sum &+= UInt32(bytes[i]) &+ UInt32(bytes[i + 1]) &+ UInt32(bytes[i + 2])
+                    sum += Int(bytes[i]) + Int(bytes[i + 1]) + Int(bytes[i + 2])
                 }
             }
-            return RowSignature(hash: hash, sum: sum)
+            return sum
         }
     }
 
     /// Finds the largest `d` in `minOverlap...maxOverlap` such that the last `d` rows of A's dynamic band
     /// (ending at `tailEnd`) match the first `d` rows of B's dynamic band (starting at `headStart`).
-    private static func findOverlap(_ a: FrameBuffer, _ tailEnd: Int, _ sigsA: [RowSignature],
-                                    _ b: FrameBuffer, _ headStart: Int, _ sigsB: [RowSignature],
+    private static func findOverlap(_ a: FrameBuffer, _ tailEnd: Int, _ sumsA: [Int],
+                                    _ b: FrameBuffer, _ headStart: Int, _ sumsB: [Int],
                                     maxOverlap: Int, minOverlap: Int, width: Int, matchTolerance: Double) -> Int? {
         guard maxOverlap >= minOverlap else { return nil }
-        // A safe lower bound: if a sampled row's summed-byte difference already exceeds this, that row alone
-        // has a mean absolute difference above `matchTolerance` (|sum(a-b)| <= sum(|a-b|)), so the band cannot
-        // possibly confirm; skip the expensive full comparison.
+        // `rowDifference` of a row, scaled back to summed bytes.
         let rowSumThreshold = matchTolerance * 255 * Double(width * 3)
 
         for d in stride(from: maxOverlap, through: minOverlap, by: -1) {
             let tailStart = tailEnd - d
-            if quickReject(sigsA, tailStart, sigsB, headStart, d, threshold: rowSumThreshold) { continue }
+            if quickReject(sumsA, tailStart, sumsB, headStart, d, rowThreshold: rowSumThreshold) { continue }
             if confirms(a, tailStart, b, headStart, d, tolerance: matchTolerance) { return d }
         }
         return nil
     }
 
-    private static func quickReject(_ sigsA: [RowSignature], _ tailStart: Int, _ sigsB: [RowSignature], _ headStart: Int,
-                                    _ d: Int, threshold: Double) -> Bool {
-        let sampleCount = min(quickRejectSamples, d)
-        guard sampleCount > 0 else { return false }
-        let step = max(1, d / sampleCount)
-        var k = 0
-        while k < d {
-            let sigA = sigsA[tailStart + k]
-            let sigB = sigsB[headStart + k]
-            if Double(abs(Int64(sigA.sum) - Int64(sigB.sum))) > threshold { return true }
-            k += step
+    /// Mirrors `confirms` on the row-sum lower bound: rejects only when some prefix of the band already has a
+    /// mean summed-byte difference above the threshold, which means its true mean difference is above the
+    /// tolerance too and `confirms` would exit at the same row. A single noisy row (a cursor, a spinner) inside
+    /// an otherwise matching band therefore never rejects on its own.
+    private static func quickReject(_ sumsA: [Int], _ tailStart: Int, _ sumsB: [Int], _ headStart: Int,
+                                    _ d: Int, rowThreshold: Double) -> Bool {
+        var runningTotal = 0
+        for k in 0..<d {
+            runningTotal += abs(sumsA[tailStart + k] - sumsB[headStart + k])
+            if Double(runningTotal) > rowThreshold * Double(k + 1) { return true }
         }
         return false
     }
