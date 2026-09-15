@@ -16,7 +16,7 @@
 
 ## Conventions (same as phases 1 and 2a)
 
-- Repo `/Users/vasiliev/cleanshotvibed`; worktrees `/Users/vasiliev/miracle-shot-wt/task-N`, branches `task/N-slug`, merge `--no-ff` into `master`. Baseline: 161 tests green, tag `phase-2a-complete`.
+- Repo `~/miracle-shot`; worktrees `~/miracle-shot-wt/task-N`, branches `task/N-slug`, merge `--no-ff` into `master`. Baseline: 161 tests green, tag `phase-2a-complete`.
 - TDD, no emoji, no "ё", colors only via `BrandPalette`. Commit messages in English ending with a blank line and `Claude-Session: https://claude.ai/code/session_012TeusS6XfhDMHoM7fu1tzs`.
 - Test helpers: `Tests/MiracleShotCoreTests/Helpers/TestImages.swift` (`solid`, `pixel`, `channel`, `assertClose`), `Tests/MiracleShotAppTests/Helpers/Fakes.swift`.
 - Existing pieces to reuse: `BrandColor`/`BrandPalette`, `CoreTypeface.mono`, `BackgroundRenderer.render`, `BackgroundPreset`, `ImageCodec`, `ImageFit`, `BrandButton`, `BrandFont`, `QuickPreviewPanel.handlers[.edit]`, `CaptureCoordinator.applyBackground`.

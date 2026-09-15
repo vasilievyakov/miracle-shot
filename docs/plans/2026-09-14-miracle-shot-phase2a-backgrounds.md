@@ -14,7 +14,7 @@
 
 ## Conventions (same as phase 1)
 
-- Repo: `/Users/vasiliev/cleanshotvibed`. Worktrees: `/Users/vasiliev/miracle-shot-wt/task-N` on branch `task/N-slug` from `master`; merge with `git merge --no-ff`.
+- Repo: `~/miracle-shot`. Worktrees: `~/miracle-shot-wt/task-N` on branch `task/N-slug` from `master`; merge with `git merge --no-ff`.
 - Tests: `swift test` (whole suite, must stay green: 115 tests before this plan). Single file: `swift test --filter BackgroundPresetTests`.
 - TDD: write the failing test, run it, see it fail for the right reason, implement, run, commit.
 - No emoji anywhere. No "ё". Colors only via `BrandPalette` tokens in Swift; preset JSON may contain hex strings but every value must be a palette token (a test enforces it).

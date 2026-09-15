@@ -14,7 +14,7 @@
 
 ## Conventions (same as before)
 
-- Repo `/Users/vasiliev/cleanshotvibed`; worktrees `/Users/vasiliev/miracle-shot-wt/task-N`, branches `task/N-slug`, merge `--no-ff` into `master`. Baseline: 320 tests green, tag `phase-2b-complete`.
+- Repo `~/miracle-shot`; worktrees `~/miracle-shot-wt/task-N`, branches `task/N-slug`, merge `--no-ff` into `master`. Baseline: 320 tests green, tag `phase-2b-complete`.
 - TDD, no emoji, no "ё", colors only via `BrandPalette`, `@MainActor` UI, Swift 6 strict concurrency. Commit messages in English ending with a blank line and `Claude-Session: https://claude.ai/code/session_012TeusS6XfhDMHoM7fu1tzs`.
 - Helpers: `Tests/MiracleShotCoreTests/Helpers/TestImages.swift` (`solid`, `pixel`, `channel`, `context`, `assertClose`), `Tests/MiracleShotAppTests/Helpers/Fakes.swift` (`CallLog`, `makeCapture`, `makeTestImage`, fakes).
 - Coordinates: `WindowInfo.frame` and `Capture.bounds` are CG global points (origin top-left of the primary display). Image pixels: origin top-left, y down.
