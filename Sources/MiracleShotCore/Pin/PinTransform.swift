@@ -13,21 +13,27 @@ public struct PinTransform: Sendable, Equatable {
 
     public var opacity: CGFloat {
         didSet {
-            let clamped = min(max(opacity, Self.opacityRange.lowerBound), Self.opacityRange.upperBound)
+            let clamped = Self.clamp(opacity, to: Self.opacityRange, fallback: oldValue)
             if clamped != opacity { opacity = clamped }
         }
     }
 
     public var scale: CGFloat {
         didSet {
-            let clamped = min(max(scale, Self.scaleRange.lowerBound), Self.scaleRange.upperBound)
+            let clamped = Self.clamp(scale, to: Self.scaleRange, fallback: oldValue)
             if clamped != scale { scale = clamped }
         }
     }
 
     public init(opacity: CGFloat = 1, scale: CGFloat = 1) {
-        self.opacity = min(max(opacity, Self.opacityRange.lowerBound), Self.opacityRange.upperBound)
-        self.scale = min(max(scale, Self.scaleRange.lowerBound), Self.scaleRange.upperBound)
+        self.opacity = Self.clamp(opacity, to: Self.opacityRange, fallback: 1)
+        self.scale = Self.clamp(scale, to: Self.scaleRange, fallback: 1)
+    }
+
+    /// NaN would survive `min`/`max` and loop the `didSet` forever, so a non-finite value keeps `fallback`.
+    private static func clamp(_ value: CGFloat, to range: ClosedRange<CGFloat>, fallback: CGFloat) -> CGFloat {
+        guard value.isFinite else { return fallback }
+        return min(max(value, range.lowerBound), range.upperBound)
     }
 
     public func opacityIncreased() -> PinTransform {

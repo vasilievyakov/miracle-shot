@@ -122,4 +122,14 @@ final class PinTransformTests: XCTestCase {
         XCTAssertEqual(PinTransform.identity.scaleLabel, "100 %")
         XCTAssertEqual(PinTransform.identity.opacityLabel, "100 %")
     }
+
+    func testNonFiniteValuesAreIgnored() {
+        var t = PinTransform(opacity: .nan, scale: .infinity)
+        XCTAssertEqual(t.opacity, 1)
+        XCTAssertEqual(t.scale, 4)
+        t.scale = 2
+        t.scale = .nan
+        XCTAssertEqual(t.scale, 2)
+        XCTAssertEqual(t.wheeled(lines: .nan).scale, 2)
+    }
 }
