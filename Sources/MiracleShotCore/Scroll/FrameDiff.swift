@@ -1,13 +1,14 @@
 import CoreGraphics
 import Foundation
 
-/// Normalized frame comparison for scrolling capture: `difference` decides whether a scroll animation has
-/// settled or whether two consecutive settled frames are the same page (end of content); `rowDifferences`
-/// locates the static header/footer bands the stitcher must not duplicate.
+/// Normalized frame comparison for scrolling capture: `maxBandDifference` decides whether a scroll animation
+/// has settled, `difference` whether two consecutive settled frames are the same page (end of content);
+/// `rowDifferences` locates the static header/footer bands the stitcher must not duplicate.
 public enum FrameDiff {
     private static let sRGB = CGColorSpace(name: CGColorSpace.sRGB)!
 
-    /// Below this the content is considered still (scroll animation finished).
+    /// Below this (per band, see `maxBandDifference`) the content is considered still: scroll and reveal
+    /// animations finished.
     public static let settledThreshold = 0.004
     /// Below this two consecutive settled frames are considered the same page (end of content).
     public static let samePageThreshold = 0.002
@@ -41,6 +42,43 @@ public enum FrameDiff {
                 }
             }
             return count > 0 ? total / Double(count) : 0
+        }
+    }
+
+    /// The largest per-band mean difference over `bands` horizontal strips of a `grid x grid` sample (RGB,
+    /// ignoring alpha), normalized to 0...1. Unlike `difference`, a section that is still fading or sliding in
+    /// after a scroll is not averaged away by the rest of a tall, unchanged frame. Different sizes return 1.
+    public static func maxBandDifference(_ a: CGImage, _ b: CGImage, bands: Int, grid: Int = 96) -> Double {
+        guard a.width == b.width, a.height == b.height else { return 1 }
+        guard grid > 0, bands > 0 else { return 0 }
+        guard let contextA = drawn(a), let contextB = drawn(b),
+              let dataA = contextA.data, let dataB = contextB.data else { return 1 }
+        let pixelsA = dataA.assumingMemoryBound(to: UInt8.self)
+        let pixelsB = dataB.assumingMemoryBound(to: UInt8.self)
+        let rowBytesA = contextA.bytesPerRow
+        let rowBytesB = contextB.bytesPerRow
+        let width = a.width
+        let height = a.height
+        let denomX = max(grid - 1, 1)
+        let denomY = max(grid - 1, 1)
+
+        return withExtendedLifetime((contextA, contextB)) {
+            var totals = Array(repeating: 0.0, count: bands)
+            var counts = Array(repeating: 0, count: bands)
+            for gy in 0..<grid {
+                let y = gy * (height - 1) / denomY
+                let band = min(gy * bands / grid, bands - 1)
+                for gx in 0..<grid {
+                    let x = gx * (width - 1) / denomX
+                    totals[band] += sampleDifference(pixelsA, rowBytesA, pixelsB, rowBytesB, x: x, y: y)
+                    counts[band] += 1
+                }
+            }
+            var worst = 0.0
+            for band in 0..<bands where counts[band] > 0 {
+                worst = max(worst, totals[band] / Double(counts[band]))
+            }
+            return worst
         }
     }
 

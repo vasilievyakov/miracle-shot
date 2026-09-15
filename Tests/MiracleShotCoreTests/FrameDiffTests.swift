@@ -35,6 +35,25 @@ final class FrameDiffTests: XCTestCase {
         XCTAssertLessThan(diff, 0.15)
     }
 
+    func testBandDifferenceSeesAChangeThatTheWholeFrameMeanHides() {
+        // A page section animating into view changes one strip of a tall frame; the frame-wide mean stays under
+        // the settled threshold while the strip itself is clearly moving.
+        let a = topBand(width: 64, height: 200, bandRows: 20, base: BrandPalette.ink, band: BrandPalette.ink)
+        let b = topBand(width: 64, height: 200, bandRows: 20, base: BrandPalette.ink, band: BrandPalette.lime)
+        let whole = FrameDiff.difference(a, b)
+        let band = FrameDiff.maxBandDifference(a, b, bands: 10)
+        XCTAssertLessThan(whole, 0.15)
+        XCTAssertGreaterThan(band, whole * 4)
+        XCTAssertGreaterThan(band, 0.5)
+    }
+
+    func testBandDifferenceOfIdenticalFramesIsZeroAndOfDifferentSizesIsOne() {
+        let a = TestImages.solid(width: 64, height: 64, r: 0.4, g: 0.5, b: 0.6)
+        XCTAssertEqual(FrameDiff.maxBandDifference(a, a, bands: 8), 0)
+        let small = TestImages.solid(width: 10, height: 10, r: 0, g: 0, b: 0)
+        XCTAssertEqual(FrameDiff.maxBandDifference(a, small, bands: 8), 1)
+    }
+
     func testDifferentSizesReturnOne() {
         let a = TestImages.solid(width: 10, height: 10, r: 0, g: 0, b: 0)
         let b = TestImages.solid(width: 20, height: 20, r: 0, g: 0, b: 0)

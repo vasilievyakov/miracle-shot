@@ -18,10 +18,14 @@ public final class ScrollCaptureService: ScrollCapturing {
 
     private static let maxKeptFrames = 50
     private static let maxDuration: TimeInterval = 30
-    /// Auto mode: how long to wait, at most, for a scroll animation to settle before giving up and using
-    /// whatever was last captured.
-    private static let settleTimeout: TimeInterval = 0.4
+    /// Auto mode: how long to wait, at most, for the scroll and any reveal animation of the newly visible
+    /// content to settle before giving up and using whatever was last captured. Static pages settle on the
+    /// second poll; the timeout only matters for pages that keep animating.
+    private static let settleTimeout: TimeInterval = 1.5
     private static let settleStep: Duration = .milliseconds(80)
+    /// Horizontal bands the settle check compares one by one, so a single section still sliding in is not
+    /// averaged away by the rest of a tall frame.
+    private static let settleBands = 12
     /// Manual mode keeps every distinct poll, settled or not, so that consecutive frames still overlap while the
     /// user keeps scrolling; the interval bounds how far a fast scroll can travel between two kept frames.
     private static let manualPollInterval: Duration = .milliseconds(250)
@@ -211,9 +215,9 @@ public final class ScrollCaptureService: ScrollCapturing {
             """)
     }
 
-    /// Sleeps in `settleStep` increments, capturing and comparing to the previous poll each time, until the
-    /// image stops changing (below `FrameDiff.settledThreshold`), `settleTimeout` has elapsed, or `stop`
-    /// says so, whichever comes first; either way the last captured frame is returned.
+    /// Sleeps in `settleStep` increments, capturing and comparing to the previous poll each time, until every
+    /// band of the image stops changing (below `FrameDiff.settledThreshold`), `settleTimeout` has elapsed, or
+    /// `stop` says so, whichever comes first; either way the last captured frame is returned.
     private func waitForSettledFrame(_ grab: () async throws -> Capture, until stop: () -> Bool) async throws -> CGImage {
         var previousPoll: CGImage?
         let timeout = Date().addingTimeInterval(Self.settleTimeout)
@@ -221,7 +225,7 @@ public final class ScrollCaptureService: ScrollCapturing {
             try await Task.sleep(for: Self.settleStep)
             let polled = try await grab().image
             if let previousPoll {
-                let delta = FrameDiff.difference(previousPoll, polled)
+                let delta = FrameDiff.maxBandDifference(previousPoll, polled, bands: Self.settleBands)
                 log.info("Settle poll: delta \(delta, format: .fixed(precision: 4), privacy: .public)")
                 if delta < FrameDiff.settledThreshold { return polled }
             }
