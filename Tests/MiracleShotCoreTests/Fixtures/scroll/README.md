@@ -1,7 +1,8 @@
 # Scroll capture corpus
 
-Real-world fixtures for `ImageStitcherCorpusTests`. Empty by default (just `.gitkeep`); the corpus test
-iterates whatever subfolders are present and passes trivially when there are none.
+Real-world fixtures for `ImageStitcherCorpusTests`. The corpus test iterates whatever subfolders are present
+and passes trivially when there are none. Shipped case: `safari-lab-site`, six 5K frames of a Safari window on
+ai-lab-agents.com scrolled by the app, with a section of floating tags that never settles.
 
 ## Layout
 
