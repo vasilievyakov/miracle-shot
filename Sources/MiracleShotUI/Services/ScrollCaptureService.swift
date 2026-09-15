@@ -11,6 +11,7 @@ import os
 public final class ScrollCaptureService: ScrollCapturing {
     private let capture: CaptureServicing
     private let windowList: WindowListProviding
+    private let scrollAreas: ScrollAreaLocating
     private let notifications: NotificationPosting
     private let log = Logger(subsystem: "agency.blackbloom.miracleshot", category: "scroll")
     /// The Accessibility prompt is shown at most once per launch; later captures fall back to manual mode quietly.
@@ -28,16 +29,15 @@ public final class ScrollCaptureService: ScrollCapturing {
     /// Wheel lines per step when a window ignores pixel-unit scroll events.
     private static let lineStep = 10
 
-    public init(capture: CaptureServicing, windowList: WindowListProviding, notifications: NotificationPosting) {
+    public init(capture: CaptureServicing, windowList: WindowListProviding, scrollAreas: ScrollAreaLocating,
+                notifications: NotificationPosting) {
         self.capture = capture
         self.windowList = windowList
+        self.scrollAreas = scrollAreas
         self.notifications = notifications
     }
 
     public func captureScrolling(window info: WindowInfo) async throws -> ScrollCaptureResult {
-        let frame0 = try await capture.capture(.window(info))
-        var frames: [CGImage] = [frame0.image]
-
         let hud = ScrollHUDPanel(anchorWindow: info)
         defer { hud.orderOut(nil) }
         var escapePressed = false
@@ -47,7 +47,7 @@ public final class ScrollCaptureService: ScrollCapturing {
 
         let started = Date()
         let deadline = started.addingTimeInterval(Self.maxDuration)
-        let center = CGPoint(x: info.frame.midX, y: info.frame.midY)
+        let windowCenter = CGPoint(x: info.frame.midX, y: info.frame.midY)
         var auto = AXIsProcessTrusted()
         if !auto, !promptedForAccessibility {
             promptedForAccessibility = true
@@ -57,12 +57,33 @@ public final class ScrollCaptureService: ScrollCapturing {
             // The key is the C global `kAXTrustedCheckOptionPrompt`; spelled out so Swift 6 does not flag the global.
             _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt" as CFString: true] as CFDictionary)
         }
-        if auto, !(await bringToFront(info, center: center)) {
+        if auto, !(await bringToFront(info, center: windowCenter)) {
             auto = false
             notifications.post(title: "Manual scrolling mode",
                                body: "The window could not be brought to the front, so it has to be scrolled by hand.",
                                isError: false)
         }
+
+        // With Accessibility the frames are cropped to the scroll area under the window's center, so sidebars
+        // and toolbars never reach the stitcher; without it the whole window is used.
+        let region = auto ? scrollAreas.scrollArea(near: windowCenter).flatMap { ScrollRegion(area: $0, window: info.frame) } : nil
+        if let region {
+            log.info("Scroll area: \(region.frame.origin.x, privacy: .public),\(region.frame.origin.y, privacy: .public) \(region.frame.width, privacy: .public)x\(region.frame.height, privacy: .public)")
+        }
+        let center = region.map { CGPoint(x: $0.frame.midX, y: $0.frame.midY) } ?? windowCenter
+        let scrollHeight = region?.frame.height ?? info.frame.height
+
+        /// One frame: the window, cut down to the scroll area when there is one.
+        func grab() async throws -> Capture {
+            let shot = try await capture.capture(.window(info))
+            guard let region else { return shot }
+            guard let cropped = region.crop(shot.image, scale: shot.scaleFactor) else { throw CaptureError.emptyImage }
+            return Capture(image: cropped, timestamp: shot.timestamp, sourceAppName: shot.sourceAppName,
+                           sourceWindowTitle: shot.sourceWindowTitle, bounds: region.frame, scaleFactor: shot.scaleFactor)
+        }
+
+        let frame0 = try await grab()
+        var frames: [CGImage] = [frame0.image]
 
         if auto {
             hud.text = "Scrolling... \(frames.count) frames. Esc to stop"
@@ -73,18 +94,22 @@ public final class ScrollCaptureService: ScrollCapturing {
             CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: center, mouseButton: .left)?
                 .post(tap: .cghidEventTap)
             try await Task.sleep(for: .milliseconds(50))
-            let step = Int(info.frame.height * 0.75)
+            let step = Int(scrollHeight * 0.75)
             var useLineUnits = false
+            var upwards = false
 
             while frames.count < Self.maxKeptFrames, Date() < deadline, !escapePressed {
-                postScroll(step: useLineUnits ? Self.lineStep : step, units: useLineUnits ? .line : .pixel, at: center)
-                let settled = try await waitForSettledFrame(info: info, until: { escapePressed })
+                let amount = useLineUnits ? Self.lineStep : step
+                postScroll(step: upwards ? -amount : amount, units: useLineUnits ? .line : .pixel, at: center)
+                let settled = try await waitForSettledFrame(grab, until: { escapePressed })
                 let lastKept = frames[frames.count - 1]
                 let delta = FrameDiff.difference(lastKept, settled)
                 log.info("Scroll step: delta from last kept frame \(delta, format: .fixed(precision: 4), privacy: .public)")
                 guard delta >= FrameDiff.samePageThreshold else {
-                    // Some views ignore pixel-unit events; try classic wheel lines once before calling it the end.
+                    // Some views ignore pixel-unit events: try classic wheel lines; and a view already at its
+                    // end can still be scrolled the other way (the stitcher handles either direction).
                     if frames.count == 1, !useLineUnits { useLineUnits = true; continue }
+                    if frames.count == 1, !upwards { upwards = true; continue }
                     break
                 }
                 frames.append(settled)
@@ -107,7 +132,7 @@ public final class ScrollCaptureService: ScrollCapturing {
             while frames.count < Self.maxKeptFrames, Date() < deadline, !returnPressed, !escapePressed {
                 try await Task.sleep(for: Self.manualPollInterval)
                 guard !returnPressed, !escapePressed else { break }
-                let polled = try await capture.capture(.window(info)).image
+                let polled = try await grab().image
                 if FrameDiff.difference(frames[frames.count - 1], polled) >= FrameDiff.samePageThreshold {
                     frames.append(polled)
                     hud.text = "\(frames.count) of \(Self.maxKeptFrames) frames. Keep scrolling slowly, then press Return. Esc cancels."
@@ -126,8 +151,8 @@ public final class ScrollCaptureService: ScrollCapturing {
             """)
         dumpFramesIfRequested(frames: frames, stitched: stitched.image)
 
-        let bounds = CGRect(origin: info.frame.origin,
-                            size: CGSize(width: info.frame.width, height: CGFloat(stitched.image.height) / frame0.scaleFactor))
+        let bounds = CGRect(origin: frame0.bounds.origin,
+                            size: CGSize(width: frame0.bounds.width, height: CGFloat(stitched.image.height) / frame0.scaleFactor))
         let shot = Capture(image: stitched.image, sourceAppName: info.ownerName, sourceWindowTitle: info.title,
                            bounds: bounds, scaleFactor: frame0.scaleFactor)
         return ScrollCaptureResult(capture: shot, usedFallback: stitched.usedFallback)
@@ -191,12 +216,12 @@ public final class ScrollCaptureService: ScrollCapturing {
     /// Sleeps in `settleStep` increments, capturing and comparing to the previous poll each time, until the
     /// image stops changing (below `FrameDiff.settledThreshold`), `settleTimeout` has elapsed, or `stop`
     /// says so, whichever comes first; either way the last captured frame is returned.
-    private func waitForSettledFrame(info: WindowInfo, until stop: () -> Bool) async throws -> CGImage {
+    private func waitForSettledFrame(_ grab: () async throws -> Capture, until stop: () -> Bool) async throws -> CGImage {
         var previousPoll: CGImage?
         let timeout = Date().addingTimeInterval(Self.settleTimeout)
         while true {
             try await Task.sleep(for: Self.settleStep)
-            let polled = try await capture.capture(.window(info)).image
+            let polled = try await grab().image
             if let previousPoll {
                 let delta = FrameDiff.difference(previousPoll, polled)
                 log.info("Settle poll: delta \(delta, format: .fixed(precision: 4), privacy: .public)")
