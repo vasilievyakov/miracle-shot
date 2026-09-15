@@ -53,7 +53,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             notifications: toast,
             preview: preview,
             ocr: OCRService(),
-            scroll: ScrollCaptureService(capture: captureService)
+            scroll: ScrollCaptureService(capture: captureService, notifications: toast)
         )
         coordinator.onHistoryChange = { [weak self] _ in self?.rebuildMenu() }
 

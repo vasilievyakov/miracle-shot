@@ -9,7 +9,10 @@ import os
 @MainActor
 public final class ScrollCaptureService: ScrollCapturing {
     private let capture: CaptureServicing
+    private let notifications: NotificationPosting
     private let log = Logger(subsystem: "agency.blackbloom.miracleshot", category: "scroll")
+    /// The Accessibility prompt is shown at most once per launch; later captures fall back to manual mode quietly.
+    private var promptedForAccessibility = false
 
     private static let maxKeptFrames = 50
     private static let maxDuration: TimeInterval = 30
@@ -19,8 +22,9 @@ public final class ScrollCaptureService: ScrollCapturing {
     private static let settleStep: Duration = .milliseconds(80)
     private static let manualPollInterval: Duration = .milliseconds(150)
 
-    public init(capture: CaptureServicing) {
+    public init(capture: CaptureServicing, notifications: NotificationPosting) {
         self.capture = capture
+        self.notifications = notifications
     }
 
     public func captureScrolling(window info: WindowInfo) async throws -> ScrollCaptureResult {
@@ -37,6 +41,14 @@ public final class ScrollCaptureService: ScrollCapturing {
         let started = Date()
         let deadline = started.addingTimeInterval(Self.maxDuration)
         let auto = AXIsProcessTrusted()
+        if !auto, !promptedForAccessibility {
+            promptedForAccessibility = true
+            notifications.post(title: "Manual scrolling mode",
+                               body: "Allow Miracle Shot in System Settings > Privacy & Security > Accessibility for automatic scrolling.",
+                               isError: false)
+            // The key is the C global `kAXTrustedCheckOptionPrompt`; spelled out so Swift 6 does not flag the global.
+            _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt" as CFString: true] as CFDictionary)
+        }
 
         if auto {
             hud.text = "Scrolling... \(frames.count) frames. Esc to stop"
@@ -47,7 +59,7 @@ public final class ScrollCaptureService: ScrollCapturing {
 
             while frames.count < Self.maxKeptFrames, Date() < deadline, !escapePressed {
                 postScroll(step: step, at: center)
-                let settled = try await waitForSettledFrame(info: info)
+                let settled = try await waitForSettledFrame(info: info, until: { escapePressed })
                 let lastKept = frames[frames.count - 1]
                 guard FrameDiff.difference(lastKept, settled) >= FrameDiff.samePageThreshold else { break }
                 frames.append(settled)
@@ -103,19 +115,18 @@ public final class ScrollCaptureService: ScrollCapturing {
     }
 
     /// Sleeps in `settleStep` increments, capturing and comparing to the previous poll each time, until the
-    /// image stops changing (below `FrameDiff.settledThreshold`) or `settleTimeout` has elapsed, whichever
-    /// comes first; either way the last captured frame is returned.
-    private func waitForSettledFrame(info: WindowInfo) async throws -> CGImage {
+    /// image stops changing (below `FrameDiff.settledThreshold`), `settleTimeout` has elapsed, or `stop`
+    /// says so, whichever comes first; either way the last captured frame is returned.
+    private func waitForSettledFrame(info: WindowInfo, until stop: () -> Bool) async throws -> CGImage {
         var previousPoll: CGImage?
-        var waited: TimeInterval = 0
+        let timeout = Date().addingTimeInterval(Self.settleTimeout)
         while true {
             try await Task.sleep(for: Self.settleStep)
-            waited += 0.08
             let polled = try await capture.capture(.window(info)).image
             if let previousPoll, FrameDiff.difference(previousPoll, polled) < FrameDiff.settledThreshold {
                 return polled
             }
-            if waited >= Self.settleTimeout {
+            if stop() || Date() >= timeout {
                 return polled
             }
             previousPoll = polled
