@@ -395,4 +395,71 @@ final class ImageStitcherTests: XCTestCase {
             XCTAssertLessThan(TestImages.pixel(result.image, x: 0, y: y).r, 128, "row \(y) should be the band")
         }
     }
+
+    func testAnimatedElementInARichBandBeatsAnExactMatchOnBlankMargins() throws {
+        // A web page: text blocks and two sections whose tag chip floats a few pixels between frames, with
+        // margins around them that fade in a repeating gradient (rows differ, so a margin band still counts
+        // as content). Three frames 200 rows apart. Each section band matches closely but not exactly (the
+        // chip moved), while margins match exactly at wrong shifts: the bottom margin of one frame against
+        // the top margin of the next repeats the section, and the third frame's top margin against the first
+        // frame's bottom margin looks like content the page already has. The sections are the evidence, the
+        // margins are not.
+        let width = 300, frameHeight = 400, shift = 200, pageHeight = 800
+        func margin(_ y: Int) -> (UInt8, UInt8, UInt8) {
+            let v = UInt8(10 + y % 40)
+            return (v, v, v)
+        }
+        func page(_ x: Int, _ y: Int) -> (UInt8, UInt8, UInt8) {
+            if y < 200 || (240..<336).contains(y) || y >= 464 { return Noise.color(x: x, y: y, salt: 0x51) }
+            return margin(y)
+        }
+        func frame(start: Int, chips: [Int]) -> CGImage {
+            render(width: width, rows: start..<(start + frameHeight)) { x, y in
+                if chips.contains(where: { ($0..<($0 + 12)).contains(y) }), (200..<260).contains(x) { return (220, 255, 80) }
+                return page(x, y)
+            }
+        }
+        let frames = [frame(start: 0, chips: [300]), frame(start: shift, chips: [306, 500]), frame(start: 2 * shift, chips: [506])]
+
+        let result = try XCTUnwrap(ImageStitcher.stitch(frames))
+        XCTAssertFalse(result.usedFallback)
+        XCTAssertEqual(result.image.height, pageHeight)
+        for y in [100, 199, 220, 250, 340, 380, 450, 470, 599, 650, 799] {
+            let (index, local) = y < frameHeight ? (0, y) : y < 2 * shift + 200 ? (1, y - shift) : (2, y - 2 * shift)
+            TestImages.assertClose(TestImages.pixel(result.image, x: 40, y: y),
+                                   TestImages.pixel(frames[index], x: 40, y: local), file: #filePath, line: #line)
+        }
+    }
+
+    func testTransparentWindowCornersAtASeamAreTakenFromTheNextFrame() throws {
+        // Window captures have transparent rounded corners; the bottom corners of every frame but the last
+        // land inside the page and must be filled with the next frame's rows, which are opaque there.
+        let (frames, page) = makeScrollFrames()
+        // The corners reach above the static footer into the page, and are narrow enough that a row with a
+        // corner still matches the next frame's row within the tolerance (a 5K window loses a few dozen
+        // pixels of 3000).
+        let cornerRows = Page.footerHeight + 10
+        let cornerWidth = 3
+        func withTransparentBottomCorners(_ image: CGImage) -> CGImage {
+            let ctx = TestImages.context(width: image.width, height: image.height)
+            ctx.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+            ctx.clear(CGRect(x: 0, y: 0, width: cornerWidth, height: cornerRows))
+            ctx.clear(CGRect(x: image.width - cornerWidth, y: 0, width: cornerWidth, height: cornerRows))
+            return ctx.makeImage()!
+        }
+        let notched = frames.map(withTransparentBottomCorners)
+
+        let result = try XCTUnwrap(ImageStitcher.stitch(notched))
+        XCTAssertEqual(result.image.height, Page.headerHeight + Page.height + Page.footerHeight)
+        // Every page row is opaque at both edges and matches the page, except the last frame's own bottom
+        // corners, which are the bottom of the whole page.
+        let pageEnd = Page.headerHeight + Page.height - (cornerRows - Page.footerHeight)
+        for y in stride(from: Page.headerHeight, to: pageEnd, by: 1) {
+            for x in [0, Page.width - 1] {
+                let p = TestImages.pixel(result.image, x: x, y: y)
+                XCTAssertEqual(p.a, 255, "row \(y) x \(x) is transparent")
+                TestImages.assertClose(p, TestImages.pixel(page, x: x, y: y - Page.headerHeight))
+            }
+        }
+    }
 }
