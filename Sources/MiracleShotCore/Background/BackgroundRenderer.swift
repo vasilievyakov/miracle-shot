@@ -187,7 +187,10 @@ public enum BackgroundRenderer {
         for glow in preset.glows {
             drawGlow(glow, in: rect, ctx: ctx)
         }
-        return ditheredImage(from: data, bytesPerRow: ctx.bytesPerRow, width: width, height: height, format: format)
+        // `ctx` owns the buffer behind `data`; keep it alive until the dither pass has read every row.
+        return withExtendedLifetime(ctx) {
+            ditheredImage(from: data, bytesPerRow: ctx.bytesPerRow, width: width, height: height, format: format)
+        }
     }
 
     private static func drawBase(_ fill: BackgroundPreset.Fill, in rect: CGRect, ctx: CGContext) {
