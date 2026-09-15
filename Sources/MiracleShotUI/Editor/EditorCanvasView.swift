@@ -58,10 +58,12 @@ final class EditorCanvasView: NSView {
         }
         guard let clipView = superview as? NSClipView else { return }
         clipView.postsFrameChangedNotifications = true
+        // View geometry notifications are posted on the main thread; handle them synchronously so the canvas
+        // keeps up with a live window resize instead of trailing it by a run loop turn.
         clipViewObserver = NotificationCenter.default.addObserver(
-            forName: NSView.frameDidChangeNotification, object: clipView, queue: .main
+            forName: NSView.frameDidChangeNotification, object: clipView, queue: nil
         ) { [weak self] _ in
-            Task { @MainActor in self?.relayout() }
+            MainActor.assumeIsolated { self?.relayout() }
         }
         relayout()
     }

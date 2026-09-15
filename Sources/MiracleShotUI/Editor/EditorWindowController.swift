@@ -42,6 +42,7 @@ public final class EditorWindowController: NSObject, NSWindowDelegate {
         let session = EditorSession(document: document, style: .default(scaleFactor: capture.scaleFactor))
         let canvas = EditorCanvasView(session: session)
         let toolbar = EditorToolbar(presets: presets)
+        canvas.onZoomChange = { [weak toolbar] label in toolbar?.setZoomLabel(label) }
 
         let scrollView = NSScrollView()
         scrollView.documentView = canvas
@@ -78,7 +79,6 @@ public final class EditorWindowController: NSObject, NSWindowDelegate {
             guard let toolbar, let canvas else { return }
             toolbar.refresh(from: canvas.session)
         }
-        canvas.onZoomChange = { [weak toolbar] label in toolbar?.setZoomLabel(label) }
         toolbar.onEvent = { [weak canvas] event in canvas?.send(event) }
         toolbar.onCopy = { [weak self] in self?.copy() }
         toolbar.onDone = { [weak self] in self?.done() }
