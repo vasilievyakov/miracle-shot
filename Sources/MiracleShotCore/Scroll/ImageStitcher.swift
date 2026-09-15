@@ -18,6 +18,10 @@ public enum ImageStitcher {
     private static let sRGB = CGColorSpace(name: CGColorSpace.sRGB)!
     /// Static header/footer are each capped at this fraction of the (smaller) frame height in a pair.
     private static let maxStaticFraction = 0.4
+    /// Pinned UI drawn over the scrolled content (a section header, a "jump to bottom" pill) may occupy up to
+    /// this fraction of the dynamic height at either end of an overlap band; those rows are left out of the
+    /// match and, where they differ, replaced by the other frame's rows.
+    private static let maxStickyFraction = 0.1
 
     /// Stitches vertically scrolled frames of the same width. One frame returns itself.
     /// Steps: (1) static header/footer = leading/trailing rows identical (row difference <= `staticTolerance`)
@@ -65,28 +69,43 @@ public enum ImageStitcher {
             dynHeight(index) == dynHeight(kept)
                 && bandDifference(buffers[kept], dynStart, buffers[index], dynStart, count: dynHeight(index)) <= staticTolerance
         }
+        func maxSticky(_ kept: Int, _ index: Int) -> Int {
+            Int(Double(min(dynHeight(kept), dynHeight(index))) * maxStickyFraction)
+        }
         // Rows of `kept`'s tail matching `index`'s head: `index` continues the page downwards after `kept`.
-        func overlapBelow(_ kept: Int, _ index: Int) -> Int? {
+        func overlapBelow(_ kept: Int, _ index: Int) -> Overlap? {
             findOverlap(buffers[kept], dynEnd(kept), sums[kept], buffers[index], dynStart, sums[index],
-                        maxOverlap: min(dynHeight(kept), dynHeight(index)) - 1,
-                        minOverlap: minOverlap, width: width, matchTolerance: matchTolerance)
+                        maxOverlap: min(dynHeight(kept), dynHeight(index)) - 1, minOverlap: minOverlap,
+                        maxSticky: maxSticky(kept, index), width: width, matchTolerance: matchTolerance)
         }
         // Rows of `index`'s tail matching `kept`'s head: `index` continues the page upwards before `kept`.
-        func overlapAbove(_ kept: Int, _ index: Int) -> Int? {
+        func overlapAbove(_ kept: Int, _ index: Int) -> Overlap? {
             findOverlap(buffers[index], dynEnd(index), sums[index], buffers[kept], dynStart, sums[kept],
-                        maxOverlap: min(dynHeight(kept), dynHeight(index)) - 1,
-                        minOverlap: minOverlap, width: width, matchTolerance: matchTolerance)
+                        maxOverlap: min(dynHeight(kept), dynHeight(index)) - 1, minOverlap: minOverlap,
+                        maxSticky: maxSticky(kept, index), width: width, matchTolerance: matchTolerance)
         }
 
         for i in 1..<buffers.count {
             if repeats(i, bottom) || repeats(i, top) { continue }
 
-            if let d = overlapBelow(bottom, i) {
-                let count = dynEnd(i) - (dynStart + d)
-                if count > 0 { body.append(Segment(bufferIndex: i, rowStart: dynStart + d, rowCount: count)) }
+            // Both directions are tried and the larger overlap wins: a real overlap is long, a coincidental
+            // one (blank rows in both frames) short.
+            let below = overlapBelow(bottom, i)
+            let above = overlapAbove(top, i)
+            if let overlap = below, overlap.rows >= (above?.rows ?? 0) {
+                // Rows at the end of the band that differ are the bottom frame's pinned footer covering content
+                // this frame shows: drop them from the page and take this frame's rows from there on.
+                let f = overlap.trailingMismatch
+                trim(&body, last: f)
+                let start = dynStart + overlap.rows - f
+                let count = dynEnd(i) - start
+                if count > 0 { body.append(Segment(bufferIndex: i, rowStart: start, rowCount: count)) }
                 bottom = i
-            } else if let d = overlapAbove(top, i) {
-                let count = dynHeight(i) - d
+            } else if let overlap = above {
+                // Mirror image: rows at the start of the band that differ are the top frame's pinned header.
+                let h = overlap.leadingMismatch
+                trim(&body, first: h)
+                let count = dynHeight(i) - overlap.rows + h
                 if count > 0 { body.insert(Segment(bufferIndex: i, rowStart: dynStart, rowCount: count), at: 0) }
                 top = i
             } else if top != bottom, overlapAbove(bottom, i) != nil || overlapBelow(top, i) != nil {
@@ -205,46 +224,75 @@ public enum ImageStitcher {
         }
     }
 
+    /// A matched band of `rows`, with the runs of rows at its start and end that differ beyond the tolerance
+    /// (pinned UI of one frame covering content the other shows); both are at most the sticky margin.
+    private struct Overlap { let rows: Int; let leadingMismatch: Int; let trailingMismatch: Int }
+
     /// Finds the largest `d` in `minOverlap...maxOverlap` such that the last `d` rows of A's dynamic band
-    /// (ending at `tailEnd`) match the first `d` rows of B's dynamic band (starting at `headStart`).
+    /// (ending at `tailEnd`) match the first `d` rows of B's dynamic band (starting at `headStart`). Up to
+    /// `maxSticky` rows (never more than a quarter of `d`) at each end of the band are left out of the match.
     private static func findOverlap(_ a: FrameBuffer, _ tailEnd: Int, _ sumsA: [Int],
                                     _ b: FrameBuffer, _ headStart: Int, _ sumsB: [Int],
-                                    maxOverlap: Int, minOverlap: Int, width: Int, matchTolerance: Double) -> Int? {
+                                    maxOverlap: Int, minOverlap: Int, maxSticky: Int, width: Int,
+                                    matchTolerance: Double) -> Overlap? {
         guard maxOverlap >= minOverlap else { return nil }
         // `rowDifference` of a row, scaled back to summed bytes.
         let rowSumThreshold = matchTolerance * 255 * Double(width * 3)
+        let uniformRowThreshold = 2.0 * Double(width * 3)
 
         for d in stride(from: maxOverlap, through: minOverlap, by: -1) {
             let tailStart = tailEnd - d
-            if quickReject(sumsA, tailStart, sumsB, headStart, d, rowThreshold: rowSumThreshold) { continue }
-            if confirms(a, tailStart, b, headStart, d, tolerance: matchTolerance) { return d }
+            let margin = min(maxSticky, d / 4)
+            let interior = margin..<(d - margin)
+            // Rows that are all alike (blank space in both frames) prove nothing; such a band is no evidence.
+            guard hasContent(sumsA, tailStart, interior, rowThreshold: uniformRowThreshold) else { continue }
+            // The interior gets the whole band's budget: leaving the margins out must never make a band fail.
+            let budget = Double(d)
+            if quickReject(sumsA, tailStart, sumsB, headStart, interior, budget: rowSumThreshold * budget) { continue }
+            guard confirms(a, tailStart, b, headStart, interior, budget: matchTolerance * budget) else { continue }
+            var leading = 0
+            while leading < margin, rowDifference(a, tailStart + leading, b, headStart + leading) > matchTolerance { leading += 1 }
+            var trailing = 0
+            while trailing < margin, rowDifference(a, tailEnd - 1 - trailing, b, headStart + d - 1 - trailing) > matchTolerance {
+                trailing += 1
+            }
+            return Overlap(rows: d, leadingMismatch: leading, trailingMismatch: trailing)
         }
         return nil
     }
 
+    /// True when the rows' byte sums are not all within `rowThreshold` of each other (2/255 per byte).
+    private static func hasContent(_ sums: [Int], _ start: Int, _ rows: Range<Int>, rowThreshold: Double) -> Bool {
+        guard let first = rows.first else { return false }
+        var low = sums[start + first], high = low
+        for k in rows {
+            low = min(low, sums[start + k])
+            high = max(high, sums[start + k])
+            if Double(high - low) > rowThreshold { return true }
+        }
+        return false
+    }
+
     /// Mirrors `confirms` on the row-sum lower bound: rejects once the summed-byte differences seen so far
-    /// already exceed what the whole band may total, which means the true mean is above the tolerance too. A
-    /// few noisy rows anywhere in the band (a cursor, a hover highlight, a "jump to bottom" pill) never reject
-    /// on their own.
+    /// already exceed `budget`, which means the true total is above it too. A few noisy rows anywhere in the
+    /// band (a cursor, a hover highlight) never reject on their own.
     private static func quickReject(_ sumsA: [Int], _ tailStart: Int, _ sumsB: [Int], _ headStart: Int,
-                                    _ d: Int, rowThreshold: Double) -> Bool {
-        let budget = rowThreshold * Double(d)
+                                    _ rows: Range<Int>, budget: Double) -> Bool {
         var runningTotal = 0
-        for k in 0..<d {
+        for k in rows {
             runningTotal += abs(sumsA[tailStart + k] - sumsB[headStart + k])
             if Double(runningTotal) > budget { return true }
         }
         return false
     }
 
-    /// Full row-by-row mean absolute difference over the `d`-row band, with an early exit as soon as the rows
-    /// seen so far already exceed the band's total budget (`tolerance * d`).
+    /// Full row-by-row absolute difference summed over `rows` of the band, with an early exit as soon as the
+    /// rows seen so far already exceed `budget` (the tolerance times the band's row count).
     private static func confirms(_ a: FrameBuffer, _ tailStart: Int, _ b: FrameBuffer, _ headStart: Int,
-                                 _ d: Int, tolerance: Double) -> Bool {
-        guard d > 0 else { return true }
-        let budget = tolerance * Double(d)
+                                 _ rows: Range<Int>, budget: Double) -> Bool {
+        guard !rows.isEmpty else { return true }
         var runningTotal = 0.0
-        for k in 0..<d {
+        for k in rows {
             runningTotal += rowDifference(a, tailStart + k, b, headStart + k)
             if runningTotal > budget { return false }
         }
@@ -254,6 +302,28 @@ public enum ImageStitcher {
     // MARK: - Output assembly
 
     private struct Segment { let bufferIndex: Int; let rowStart: Int; let rowCount: Int }
+
+    /// Drops `count` rows from the end of the page.
+    private static func trim(_ body: inout [Segment], last count: Int) {
+        var remaining = count
+        while remaining > 0, let segment = body.last {
+            let cut = min(remaining, segment.rowCount)
+            body[body.count - 1] = Segment(bufferIndex: segment.bufferIndex, rowStart: segment.rowStart, rowCount: segment.rowCount - cut)
+            if body[body.count - 1].rowCount == 0 { body.removeLast() }
+            remaining -= cut
+        }
+    }
+
+    /// Drops `count` rows from the start of the page.
+    private static func trim(_ body: inout [Segment], first count: Int) {
+        var remaining = count
+        while remaining > 0, let segment = body.first {
+            let cut = min(remaining, segment.rowCount)
+            body[0] = Segment(bufferIndex: segment.bufferIndex, rowStart: segment.rowStart + cut, rowCount: segment.rowCount - cut)
+            if body[0].rowCount == 0 { body.removeFirst() }
+            remaining -= cut
+        }
+    }
 
     private static func buildOutput(width: Int, segments: [Segment], buffers: [FrameBuffer]) -> CGImage? {
         let totalHeight = segments.reduce(0) { $0 + $1.rowCount }

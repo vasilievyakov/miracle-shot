@@ -238,6 +238,72 @@ final class ImageStitcherTests: XCTestCase {
         XCTAssertEqual(result.image.height, 600)
     }
 
+    // MARK: - Sticky UI inside the scrolled area
+
+    /// Frames of the page with a band drawn over the top (`stickyTop`) or bottom (`stickyBottom`) rows of every
+    /// window, the way a pinned section header or a "jump to bottom" pill sits over scrolled content. The band's
+    /// pattern changes with the frame index (`stickySalt`), so it is not a static header or footer of the capture.
+    private func makeStickyFrames(stickyTop: Int, stickyBottom: Int) -> [CGImage] {
+        let (frames, _) = makeScrollFrames()
+        return frames.enumerated().map { index, frame in
+            let ctx = TestImages.context(width: frame.width, height: frame.height)
+            ctx.draw(frame, in: CGRect(x: 0, y: 0, width: frame.width, height: frame.height))
+            let data = ctx.data!.assumingMemoryBound(to: UInt8.self)
+            func paint(rows: Range<Int>, salt: Int) {
+                for y in rows {
+                    for x in 0..<frame.width {
+                        let (r, g, b) = Noise.color(x: x, y: y - rows.lowerBound, salt: salt)
+                        let i = y * ctx.bytesPerRow + x * 4
+                        data[i] = r; data[i + 1] = g; data[i + 2] = b; data[i + 3] = 255
+                    }
+                }
+            }
+            paint(rows: Page.headerHeight..<(Page.headerHeight + stickyTop), salt: Self.stickySalt(index))
+            paint(rows: (Page.headerHeight + Page.frameHeight - stickyBottom)..<(Page.headerHeight + Page.frameHeight),
+                  salt: Self.stickySalt(index))
+            return withExtendedLifetime(ctx) { ctx.makeImage()! }
+        }
+    }
+
+    private static func stickySalt(_ frameIndex: Int) -> Int { 0x500 + frameIndex }
+
+    /// A pinned header sits over scrolled content in every frame: scrolling up must not copy it into the page at
+    /// every seam. The upward stitch equals the forward one, where the header is never copied.
+    func testStickyHeaderIsNotRepeatedWhenScrollingUp() throws {
+        let frames = makeStickyFrames(stickyTop: 20, stickyBottom: 0)
+        let forward = try XCTUnwrap(ImageStitcher.stitch(frames))
+        let upward = try XCTUnwrap(ImageStitcher.stitch(frames.reversed()))
+
+        XCTAssertFalse(forward.usedFallback)
+        XCTAssertFalse(upward.usedFallback)
+        XCTAssertEqual(forward.image.height, Page.headerHeight + Page.height + Page.footerHeight)
+        XCTAssertEqual(upward.image.height, forward.image.height)
+        let forwardRed = TestImages.channel(forward.image, 0)
+        let upwardRed = TestImages.channel(upward.image, 0)
+        for y in stride(from: 0, to: forward.image.height, by: 7) {
+            XCTAssertEqual(Int(upwardRed[y][7]), Int(forwardRed[y][7]), accuracy: 2, "row \(y)")
+        }
+    }
+
+    /// A pinned element at the bottom of every frame must appear once, at the very bottom, not at every seam.
+    func testStickyFooterIsNotRepeatedWhenScrollingDown() throws {
+        let frames = makeStickyFrames(stickyTop: 0, stickyBottom: 20)
+        let result = try XCTUnwrap(ImageStitcher.stitch(frames))
+        XCTAssertFalse(result.usedFallback)
+        XCTAssertEqual(result.image.height, Page.headerHeight + Page.height + Page.footerHeight)
+
+        let red = TestImages.channel(result.image, 0)
+        func isPillRow(_ y: Int, _ index: Int) -> Bool {
+            (0..<8).allSatisfy { x in abs(Int(red[y][x * 13]) - Int(Noise.color(x: x * 13, y: 0, salt: Self.stickySalt(index)).0)) <= 2 }
+        }
+        var pillRows: [Int] = []
+        for y in 0..<result.image.height where frames.indices.contains(where: { isPillRow(y, $0) }) {
+            pillRows.append(y)
+        }
+        // Only the last frame's pill survives, 20 rows above the footer.
+        XCTAssertEqual(pillRows, [Page.headerHeight + Page.height - 20])
+    }
+
     /// Frames that are otherwise a solid color, each with one distinct band. Most rows are pixel-identical
     /// between the two frames (gray == gray) no matter how they are aligned, so a matcher that only samples a
     /// few rows per candidate offset could report a match almost anywhere. Only the offset that truly lines up

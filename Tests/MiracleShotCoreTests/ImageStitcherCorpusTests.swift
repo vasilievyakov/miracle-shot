@@ -3,9 +3,17 @@ import XCTest
 @testable import MiracleShotCore
 
 /// Runs `ImageStitcher` against the real-world corpus in `Fixtures/scroll/<app>/`, if any is present. See
-/// `Fixtures/scroll/README.md` for the corpus layout and how frames are collected.
+/// `Fixtures/scroll/README.md` for the corpus layout and how frames are collected. Real frames take about half
+/// a minute each in an unoptimized build, so a debug `swift test` skips the corpus unless `MIRACLE_SHOT_CORPUS`
+/// is set; `scripts/test-corpus.sh` runs it optimized.
 final class ImageStitcherCorpusTests: XCTestCase {
     func testCorpus() throws {
+        #if DEBUG
+        guard ProcessInfo.processInfo.environment["MIRACLE_SHOT_CORPUS"] != nil else {
+            print("ImageStitcherCorpusTests: debug build, set MIRACLE_SHOT_CORPUS=1 or run scripts/test-corpus.sh; skipping")
+            return
+        }
+        #endif
         guard let scrollRoot = Bundle.module.url(forResource: "Fixtures", withExtension: nil)?.appendingPathComponent("scroll") else {
             XCTFail("Fixtures/scroll not found in the test resource bundle")
             return
