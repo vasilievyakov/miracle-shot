@@ -76,17 +76,17 @@ public final class ScrollCaptureService: ScrollCapturing {
             CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: center, mouseButton: .left)?
                 .post(tap: .cghidEventTap)
             try await Task.sleep(for: .milliseconds(50))
-            let step = Int(info.frame.height * 0.75)
+            var pixelStep = Int(info.frame.height * 0.75)
+            var lineStep = Self.lineStep
             var useLineUnits = false
             var upwards = false
 
             while frames.count < Self.maxKeptFrames, Date() < deadline, !escapePressed {
-                let amount = useLineUnits ? Self.lineStep : step
+                let amount = useLineUnits ? lineStep : pixelStep
                 postScroll(step: upwards ? -amount : amount, units: useLineUnits ? .line : .pixel, at: center)
                 let settled = try await waitForSettledFrame(grab, until: { escapePressed })
                 let lastKept = frames[frames.count - 1]
                 let delta = FrameDiff.difference(lastKept, settled)
-                log.info("Scroll step: delta from last kept frame \(delta, format: .fixed(precision: 4), privacy: .public)")
                 guard delta >= FrameDiff.samePageThreshold else {
                     // Some views ignore pixel-unit events: try classic wheel lines; and a view already at its
                     // end can still be scrolled the other way (the stitcher handles either direction).
@@ -96,6 +96,15 @@ public final class ScrollCaptureService: ScrollCapturing {
                 }
                 frames.append(settled)
                 hud.text = "Scrolling... \(frames.count) frames. Esc to stop"
+
+                // How far did the view actually move? Apps map a wheel line to anything from a text line to a
+                // page, so the step follows the measured shift: no overlap halves it, a small shift grows it.
+                let shift = Self.measuredShift(from: lastKept, to: settled)
+                let height = Double(settled.height)
+                var factor = 1.0
+                if shift == nil { factor = 0.5 } else if Double(shift!) > height * 0.85 { factor = 0.6 } else if Double(shift!) < height * 0.3 { factor = 1.5 }
+                if useLineUnits { lineStep = max(1, min(60, Int(Double(lineStep) * factor))) } else { pixelStep = max(24, Int(Double(pixelStep) * factor)) }
+                log.info("Scroll step: delta \(delta, format: .fixed(precision: 4), privacy: .public) shift \(shift ?? -1, privacy: .public) px, next step \(useLineUnits ? lineStep : pixelStep, privacy: .public) \(useLineUnits ? "lines" : "px", privacy: .public)")
             }
 
             if frames.count == 1, !escapePressed {
@@ -178,6 +187,13 @@ public final class ScrollCaptureService: ScrollCapturing {
                 return
             }
         }
+    }
+
+    /// Rows the content moved between two consecutive frames according to the stitcher, or nil when they do
+    /// not overlap at all.
+    private static func measuredShift(from previous: CGImage, to current: CGImage) -> Int? {
+        guard let probe = ImageStitcher.stitch([previous, current]), !probe.usedFallback else { return nil }
+        return probe.image.height - previous.height
     }
 
     private func postScroll(step: Int, units: CGScrollEventUnit, at location: CGPoint) {
