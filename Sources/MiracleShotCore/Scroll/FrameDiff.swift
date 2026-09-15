@@ -28,17 +28,20 @@ public enum FrameDiff {
         let denomX = max(grid - 1, 1)
         let denomY = max(grid - 1, 1)
 
-        var total = 0.0
-        var count = 0
-        for gy in 0..<grid {
-            let y = gy * (height - 1) / denomY
-            for gx in 0..<grid {
-                let x = gx * (width - 1) / denomX
-                total += sampleDifference(pixelsA, rowBytesA, pixelsB, rowBytesB, x: x, y: y)
-                count += 1
+        // The contexts own the buffers behind `pixelsA`/`pixelsB`; ARC may otherwise release them before the loop ends.
+        return withExtendedLifetime((contextA, contextB)) {
+            var total = 0.0
+            var count = 0
+            for gy in 0..<grid {
+                let y = gy * (height - 1) / denomY
+                for gx in 0..<grid {
+                    let x = gx * (width - 1) / denomX
+                    total += sampleDifference(pixelsA, rowBytesA, pixelsB, rowBytesB, x: x, y: y)
+                    count += 1
+                }
             }
+            return count > 0 ? total / Double(count) : 0
         }
-        return count > 0 ? total / Double(count) : 0
     }
 
     /// Row-wise difference: for `rowCount` evenly spaced rows, the mean absolute RGB difference across every
@@ -58,21 +61,23 @@ public enum FrameDiff {
         let stride = max(1, width / 64)
         let denomRow = max(rowCount - 1, 1)
 
-        var result: [Double] = []
-        result.reserveCapacity(rowCount)
-        for r in 0..<rowCount {
-            let y = r * (height - 1) / denomRow
-            var total = 0.0
-            var count = 0
-            var x = 0
-            while x < width {
-                total += sampleDifference(pixelsA, rowBytesA, pixelsB, rowBytesB, x: x, y: y)
-                count += 1
-                x += stride
+        return withExtendedLifetime((contextA, contextB)) {
+            var result: [Double] = []
+            result.reserveCapacity(rowCount)
+            for r in 0..<rowCount {
+                let y = r * (height - 1) / denomRow
+                var total = 0.0
+                var count = 0
+                var x = 0
+                while x < width {
+                    total += sampleDifference(pixelsA, rowBytesA, pixelsB, rowBytesB, x: x, y: y)
+                    count += 1
+                    x += stride
+                }
+                result.append(count > 0 ? total / Double(count) : 0)
             }
-            result.append(count > 0 ? total / Double(count) : 0)
+            return result
         }
-        return result
     }
 
     /// Mean of |dR|, |dG|, |dB| at one pixel, normalized to 0...1. Alpha is ignored; both buffers are

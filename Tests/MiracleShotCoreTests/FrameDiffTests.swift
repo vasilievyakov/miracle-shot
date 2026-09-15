@@ -58,4 +58,12 @@ final class FrameDiffTests: XCTestCase {
         let b = TestImages.solid(width: 20, height: 20, r: 0, g: 0, b: 0)
         XCTAssertEqual(FrameDiff.rowDifferences(a, b, rowCount: 5), [1, 1, 1, 1, 1])
     }
+
+    func testDegenerateGridsAndTinyImagesDoNotCrash() {
+        let a = TestImages.solid(width: 1, height: 1, r: 0, g: 0, b: 0)
+        let b = TestImages.solid(width: 1, height: 1, r: 1, g: 1, b: 1)
+        XCTAssertEqual(FrameDiff.difference(a, b, grid: 1), 1, accuracy: 0.01)
+        XCTAssertEqual(FrameDiff.difference(a, a, grid: 1), 0)
+        XCTAssertEqual(FrameDiff.rowDifferences(a, b, rowCount: 5).count, 5)
+    }
 }
