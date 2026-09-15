@@ -72,8 +72,26 @@ func makeCapture() -> Capture {
 
 @MainActor final class FakeClipboard: ClipboardServicing {
     let log: CallLog
+    var copiedText: String?
     init(log: CallLog) { self.log = log }
     func copy(_ capture: Capture) { log.add("copy") }
+    func copyText(_ text: String) {
+        log.add("copyText")
+        copiedText = text
+    }
+}
+
+@MainActor final class FakeOCR: OCRServicing {
+    let log: CallLog
+    var result = OCRResult(blocks: [])
+    var error: Error?
+    init(log: CallLog) { self.log = log }
+
+    func recognize(_ image: CGImage) async throws -> OCRResult {
+        log.add("ocr")
+        if let error { throw error }
+        return result
+    }
 }
 
 @MainActor final class FakeFiles: FileSaving {

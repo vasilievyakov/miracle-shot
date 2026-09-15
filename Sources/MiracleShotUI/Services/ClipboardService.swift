@@ -17,4 +17,10 @@ public final class ClipboardService: ClipboardServicing {
             pasteboard.setData(tiff, forType: .tiff)
         }
     }
+
+    public func copyText(_ text: String) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+    }
 }

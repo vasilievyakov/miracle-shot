@@ -37,6 +37,9 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.coordinator.publish(image, derivedFrom: capture)
             }
         }
+        preview.handlers[.ocr] = { [weak self] capture, _ in
+            Task { await self?.coordinator.recognizeText(in: capture) }
+        }
         log.info("Background presets: \(self.preview.backgroundPresets.map(\.id).joined(separator: ", "), privacy: .public)")
 
         let captureService = ScreenCaptureService()
@@ -48,7 +51,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             clipboard: ClipboardService(),
             files: FileSaveService(),
             notifications: toast,
-            preview: preview
+            preview: preview,
+            ocr: OCRService()
         )
         coordinator.onHistoryChange = { [weak self] _ in self?.rebuildMenu() }
 

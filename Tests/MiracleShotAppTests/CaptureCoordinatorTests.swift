@@ -11,6 +11,7 @@ final class CaptureCoordinatorTests: XCTestCase {
     private var files: FakeFiles!
     private var notifications: FakeNotifications!
     private var preview: FakePreview!
+    private var ocr: FakeOCR!
     private var historyURL: URL!
     private var settings: Settings!
     private var sut: CaptureCoordinator!
@@ -23,12 +24,14 @@ final class CaptureCoordinatorTests: XCTestCase {
         files = FakeFiles(log: log)
         notifications = FakeNotifications(log: log)
         preview = FakePreview(log: log)
+        ocr = FakeOCR(log: log)
         historyURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
         settings = Settings.default
         settings.saveDirectoryPath = "/tmp/miracle-shot-tests/shots"
         settings.namingTemplate = NamingTemplate(pattern: "{app}-{seq}")
         sut = CaptureCoordinator(settings: settings, historyURL: historyURL, capture: capture, selection: selection,
-                                 clipboard: clipboard, files: files, notifications: notifications, preview: preview)
+                                 clipboard: clipboard, files: files, notifications: notifications, preview: preview,
+                                 ocr: ocr)
     }
 
     func testAreaCaptureHappyPath() async {
@@ -266,5 +269,36 @@ final class CaptureCoordinatorTests: XCTestCase {
         selection.result = nil
         selection.resume()
         await task.value
+    }
+
+    private struct OCRTestError: LocalizedError {
+        var errorDescription: String? { "OCR blew up" }
+    }
+
+    func testRecognizeTextCopiesAndNotifies() async {
+        let block = TextBlock(text: "Hello world", rect: CGRect(x: 0, y: 0, width: 10, height: 5), confidence: 1)
+        ocr.result = OCRResult(blocks: [block])
+        await sut.recognizeText(in: makeCapture())
+        XCTAssertEqual(log.entries, ["ocr", "copyText", "notify(info)"])
+        XCTAssertEqual(clipboard.copiedText, ocr.result.text)
+        XCTAssertEqual(notifications.posted.last?.title, "Text copied")
+        XCTAssertEqual(notifications.lastBody, ocr.result.preview(lines: 3))
+    }
+
+    func testRecognizeTextWithoutTextNotifiesAndLeavesClipboard() async {
+        await sut.recognizeText(in: makeCapture())
+        XCTAssertFalse(log.entries.contains("copyText"))
+        XCTAssertNil(clipboard.copiedText)
+        XCTAssertEqual(notifications.posted.last?.title, "No text found")
+        XCTAssertEqual(notifications.posted.last?.isError, false)
+    }
+
+    func testRecognizeTextFailureNotifiesError() async {
+        ocr.error = OCRTestError()
+        await sut.recognizeText(in: makeCapture())
+        XCTAssertFalse(log.entries.contains("copyText"))
+        XCTAssertEqual(notifications.posted.last?.title, "Text recognition failed")
+        XCTAssertEqual(notifications.lastBody, "OCR blew up")
+        XCTAssertEqual(notifications.posted.last?.isError, true)
     }
 }
