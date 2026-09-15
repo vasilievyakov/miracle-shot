@@ -266,6 +266,30 @@ final class ImageStitcherTests: XCTestCase {
         XCTAssertEqual(result.image.height, Page.headerHeight + Page.height + Page.footerHeight)
     }
 
+    /// A list with alternating row backgrounds and sparse text: shifted by a whole number of rows, most pixels
+    /// still agree and the mean difference stays under the tolerance. The exact alignment (which differs by
+    /// almost nothing) must win over such near-misses even when they come with a larger overlap.
+    func testExactAlignmentBeatsANearMissWithLargerOverlap() throws {
+        let width = 300
+        let rowPitch = 20
+        let stripe: [(UInt8, UInt8, UInt8)] = [(40, 40, 42), (46, 46, 48)]
+        // Page: zebra rows, each with one short "label" of a few bright pixels at a row-specific position.
+        func page(_ x: Int, _ y: Int) -> (UInt8, UInt8, UInt8) {
+            let row = y / rowPitch
+            let base = stripe[row % 2]
+            let labelStart = 20 + (row * 37) % 200
+            if y % rowPitch >= 6, y % rowPitch < 14, x >= labelStart, x < labelStart + 12 { return (230, 230, 230) }
+            return base
+        }
+        let a = render(width: width, rows: 0..<400, colorAt: page)
+        // Scrolled by 3 rows: the 2-row shift (a larger overlap) aligns the stripes but not the labels.
+        let b = render(width: width, rows: 60..<460, colorAt: page)
+
+        let result = try XCTUnwrap(ImageStitcher.stitch([a, b]))
+        XCTAssertFalse(result.usedFallback)
+        XCTAssertEqual(result.image.height, 460)
+    }
+
     // MARK: - Sticky UI inside the scrolled area
 
     /// Frames of the page with a band drawn over the top (`stickyTop`) or bottom (`stickyBottom`) rows of every
