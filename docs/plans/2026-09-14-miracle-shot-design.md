@@ -95,6 +95,7 @@ MiracleShot/
 - `Document` — `source: CGImage`, `annotations: [Annotation]`, `background: BackgroundPreset?`, `cropRect: CGRect?`.
 - `AnnotationRenderer` — `render(_ document: Document) -> CGImage`. Один путь для превью и экспорта. Blur/pixelate через CoreImage.
 - `UndoStack<T>` — массив снимков, `push`, `undo`, `redo`, ограничение глубины.
+- `EditorSession` — чистый автомат взаимодействия: события мыши и клавиатуры (в пикселях снимка) -> мутации `Document`, выделение, перетаскивание, ресайз за ручки, кроп, undo/redo; эффекты для UI только два: начать и закончить редактирование текста. Геометрия ручек и хит-тест — `AnnotationHandles`, `AnnotationHitTest`, `EditorGeometry` (пересчет вид <-> пиксели).
 
 Скроллинг и OCR:
 - `FrameDiff` — нормированная разница двух кадров (0...1) по сетке сэмплов; используется и для «скролл успокоился», и для «страница долистана».
@@ -119,7 +120,7 @@ MiracleShot/
 - `CaptureService` — ScreenCaptureKit: `SCShareableContent` для окон/экранов при захвате, `SCScreenshotManager.captureImage` для снимка. Требует разрешение Screen Recording.
 - `SelectionOverlay` — borderless `NSPanel` уровня `.screenSaver` на каждый экран; только отрисовка и ввод, вся геометрия — `SelectionGeometry`.
 - `QuickPreviewPanel` — плавающая `NSPanel` в правом нижнем углу; миниатюра, кнопки, `PreviewTiming`, `NSDraggingSource` для Drag&Drop файла.
-- `EditorWindow` — `NSWindow` с SwiftUI `Canvas`; тулбар инструментов и стилей; хранит `Document`, рендер превью и экспорт через `AnnotationRenderer`.
+- `EditorWindowController` — `NSWindow` с AppKit `EditorCanvasView` (флипнутый NSView: рендер документа, выделение, кроп-оверлей, встроенное текстовое поле) и `EditorToolbar` в стиле бренда; хоткеи через `EditorShortcuts` (нет главного меню); `Done` -> `CaptureCoordinator.publish` (буфер, файл, история, превью), `Copy`, drag-and-drop PNG из тулбара.
 - `PinPanel` — плавающая `NSPanel` с картинкой, `isMovableByWindowBackground`, `PinTransform`.
 - `OCRService` — обертка над Vision `VNRecognizeTextRequest`, `recognitionLanguages = ["ru", "en"]`.
 - `ScrollCaptureService` — выбирает окно, шлет `CGEvent` scroll, снимает кадры через `CaptureServicing`, ждет успокоения по `FrameDiff`, отдает `ImageStitcher`.

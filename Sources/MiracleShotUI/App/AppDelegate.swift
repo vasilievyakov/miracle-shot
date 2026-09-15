@@ -10,6 +10,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private let toast = ToastPresenter()
     private let preview = QuickPreviewPanel()
     private let historyMenu = HistoryMenuBuilder()
+    private let editor = EditorWindowController()
     private var settingsWindow: SettingsWindowController!
     private var settings = Settings.default
     private let log = Logger(subsystem: "agency.blackbloom.miracleshot", category: "app")
@@ -29,6 +30,12 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             userDirectory: Settings.supportDirectory.appendingPathComponent("presets", isDirectory: true))
         preview.onApplyBackground = { [weak self] capture, _, preset in
             self?.coordinator.applyBackground(preset, to: capture)
+        }
+        preview.handlers[.edit] = { [weak self] capture, _ in
+            guard let self else { return }
+            editor.open(capture: capture, presets: preview.backgroundPresets) { [weak self] image in
+                self?.coordinator.publish(image, derivedFrom: capture)
+            }
         }
         log.info("Background presets: \(self.preview.backgroundPresets.map(\.id).joined(separator: ", "), privacy: .public)")
 
