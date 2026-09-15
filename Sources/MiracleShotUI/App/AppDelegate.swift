@@ -11,6 +11,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private let preview = QuickPreviewPanel()
     private let historyMenu = HistoryMenuBuilder()
     private let editor = EditorWindowController()
+    private let pins = PinController()
     private var settingsWindow: SettingsWindowController!
     private var settings = Settings.default
     private let log = Logger(subsystem: "agency.blackbloom.miracleshot", category: "app")
@@ -36,6 +37,9 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             editor.open(capture: capture, presets: preview.backgroundPresets) { [weak self] image in
                 self?.coordinator.publish(image, derivedFrom: capture)
             }
+        }
+        preview.handlers[.pin] = { [weak self] capture, _ in
+            self?.pins.pin(capture)
         }
         preview.handlers[.ocr] = { [weak self] capture, _ in
             Task { await self?.coordinator.recognizeText(in: capture) }
