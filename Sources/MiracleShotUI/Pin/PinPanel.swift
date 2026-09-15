@@ -63,7 +63,7 @@ public final class PinPanel: NSPanel {
         isOpaque = false
         backgroundColor = .clear
         hidesOnDeactivate = false
-        becomesKeyOnlyIfNeeded = true
+        becomesKeyOnlyIfNeeded = false
         contentView = content
 
         layoutHUD()
@@ -113,8 +113,9 @@ public final class PinPanel: NSPanel {
 
     override public func scrollWheel(with event: NSEvent) {
         if event.modifierFlags.contains(.option) {
-            guard event.deltaY != 0 else { return }
-            transform = event.deltaY > 0 ? transform.opacityIncreased() : transform.opacityDecreased()
+            let delta = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY : event.deltaY
+            guard delta != 0 else { return }
+            transform = delta > 0 ? transform.opacityIncreased() : transform.opacityDecreased()
             showHUD(transform.opacityLabel)
             return
         }
@@ -161,7 +162,11 @@ public final class PinPanel: NSPanel {
 
     // MARK: - Closing
 
+    private var isClosing = false
+
     private func requestClose() {
+        guard !isClosing else { return }
+        isClosing = true
         hudWorkItem?.cancel()
         hudWorkItem = nil
         NSAnimationContext.runAnimationGroup({ ctx in
