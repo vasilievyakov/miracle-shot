@@ -60,6 +60,12 @@ open "build/Miracle Shot.app"
 
 All four are configurable in Settings (cmd+, from the menu).
 
+![Scrolling capture: the app scrolls the window by itself](docs/media/scroll.gif)
+
+The result of that capture, a 3116 by 13368 pixel page, cut into three columns to fit here:
+
+![The stitched page in three columns](docs/media/scroll-result.png)
+
 The preview panel stays for six seconds (hover to keep it):
 
 | Button | What happens |
@@ -71,11 +77,19 @@ The preview panel stays for six seconds (hover to keep it):
 | Reveal | Shows the file in Finder |
 | Drag the thumbnail | Drops the PNG into any app |
 
+![The preview panel](docs/media/preview.png)
+
 Editor keys: `V` select, `A` arrow, `L` line, `R` rectangle, `O` ellipse, `P` pen, `T` text, `N` numbered step, `B` blur, `H` highlighter, `C` crop; `Delete` removes the selection; `cmd+Z` / `shift+cmd+Z` undo and redo; `cmd+=` / `cmd+-` zoom, `cmd+0` fit, `cmd+1` 100 percent, pinch and cmd+wheel zoom under the cursor; `cmd+C` copies the result; `Done` exports. Colors are the palette only: bone, lime, coral, ink.
+
+![The editor with an arrow, an ellipse and a rectangle](docs/media/editor.png)
 
 Pin keys: `+` / `-` zoom, `]` / `[` opacity, `0` reset, wheel zooms, option+wheel changes opacity, Esc or double click closes.
 
+![A pinned capture stays while the page scrolls under it](docs/media/pin.gif)
+
 Background presets are JSON files. The built-in ones are in `Sources/MiracleShotCore/Resources/presets/`; put your own into `~/Library/Application Support/Miracle Shot/presets/` and they appear in the menu.
+
+![The Lab Brand preset around a capture](docs/media/background.png)
 
 ## Where the code is
 
@@ -107,7 +121,7 @@ docs/media/               screenshots and screencasts for this README; tests.tap
 scripts/                  build-app.sh, make-icon.swift, make-signing-cert.sh, fetch-fonts.sh, test-corpus.sh
 ```
 
-Numbers at the time of writing: about 7,000 lines of source, 4,500 lines of tests, 407 tests, 150+ commits.
+Numbers at the time of writing: about 7,000 lines of source, 4,500 lines of tests, 411 tests, 160+ commits.
 
 ## How it was made
 
@@ -133,7 +147,7 @@ Phase 1 shipped that evening: hotkeys, overlay with magnifier and window snappin
 - Ad-hoc signed builds lose the Screen Recording permission after every rebuild; a local self-signed identity keeps the designated requirement stable.
 - Reading `CGContext.data` after the last use of the context can read freed memory in optimized builds; every such read is wrapped in `withExtendedLifetime`.
 - A `grep` on test output masked a failing test, and a task was merged red; since then the orchestrator reads the summary line, not a filter.
-- The scroll stitcher was written for pages scrolled downwards. Real captures had a user scrolling both ways, a terminal UI that jumps a page on the first wheel event, a Finder window whose translucent chrome shifts by a few levels with whatever is behind it, a "jump to bottom" pill pinned over the content, and a file list whose sparse text on striped rows almost matches when shifted by a whole row. The matcher now takes the closest overlap rather than the first one under the tolerance, tries all four ways a frame can relate to the page, leaves pinned UI out of the comparison, judges static edges by the median of pairs, and the capture side adapts the scroll step to the shift it actually measures.
+- The scroll stitcher was written for pages scrolled downwards. Real captures had a user scrolling both ways, a terminal UI that jumps a page on the first wheel event, a Finder window whose translucent chrome shifts by a few levels with whatever is behind it, a "jump to bottom" pill pinned over the content, and a file list whose sparse text on striped rows almost matches when shifted by a whole row. Then the lab's own site added a section of tags that float forever, so no alignment is ever exact and the blank margins between sections match better than the content. The matcher now takes the alignment whose matching rows explain the most detail rather than the closest one, tries all four ways a frame can relate to the page, leaves pinned UI out of the comparison, judges static edges by the median of pairs, waits for reveal animations per band, and the capture side adapts the scroll step to the shift it actually measures. Every one of those rules has a synthetic test and a real capture behind it.
 - The Accessibility scroll-area crop (capture only the `AXScrollArea`, no sidebars) was built, worked from a command-line probe, did not work from inside the app, and was removed the same hour because the human preferred the whole window anyway: "I will crop in the editor".
 
 **What it cost.** Two days of one person's attention, most of it testing builds and answering questions. Agents stalled twice when the laptop slept and were resumed with a message.
