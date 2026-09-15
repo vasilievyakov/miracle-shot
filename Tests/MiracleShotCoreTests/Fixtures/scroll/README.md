@@ -39,3 +39,8 @@ order, review the result and save it as `expected.png`.
 
 If the corpus test fails, tune `ImageStitcher.stitch`'s `matchTolerance`/`minOverlap` rather than editing
 `expected.png` -- the fixture is the ground truth.
+
+## Running
+
+Real frames take about half a minute each unoptimized, so a plain debug `swift test` skips the corpus. Run it
+optimized with `scripts/test-corpus.sh`, or force it in a debug run with `MIRACLE_SHOT_CORPUS=1 swift test`.
