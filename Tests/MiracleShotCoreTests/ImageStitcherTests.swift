@@ -238,6 +238,34 @@ final class ImageStitcherTests: XCTestCase {
         XCTAssertEqual(result.image.height, 600)
     }
 
+    /// Translucent window chrome picks up whatever is behind the window, so one frame's header and footer can
+    /// differ from the others by a few levels everywhere. Such a frame must not erase the static header and
+    /// footer for the whole capture.
+    func testHeaderAndFooterSurviveABackdropShiftInOneFrame() throws {
+        let (frames, _) = makeScrollFrames()
+        var shifted = frames
+        let victim = 2
+        let frame = frames[victim]
+        let ctx = TestImages.context(width: frame.width, height: frame.height)
+        ctx.draw(frame, in: CGRect(x: 0, y: 0, width: frame.width, height: frame.height))
+        let data = ctx.data!.assumingMemoryBound(to: UInt8.self)
+        for y in Array(0..<Page.headerHeight) + Array((frame.height - Page.footerHeight)..<frame.height) {
+            for x in 0..<frame.width {
+                for c in 0..<3 {
+                    let i = y * ctx.bytesPerRow + x * 4 + c
+                    data[i] = UInt8(min(255, Int(data[i]) + 4))
+                }
+            }
+        }
+        shifted[victim] = withExtendedLifetime(ctx) { ctx.makeImage()! }
+
+        let result = try XCTUnwrap(ImageStitcher.stitch(shifted))
+        XCTAssertEqual(result.headerRows, Page.headerHeight)
+        XCTAssertEqual(result.footerRows, Page.footerHeight)
+        XCTAssertFalse(result.usedFallback)
+        XCTAssertEqual(result.image.height, Page.headerHeight + Page.height + Page.footerHeight)
+    }
+
     // MARK: - Sticky UI inside the scrolled area
 
     /// Frames of the page with a band drawn over the top (`stickyTop`) or bottom (`stickyBottom`) rows of every
