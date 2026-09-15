@@ -62,6 +62,7 @@ public struct EditorSession: Sendable, Equatable {
     /// The document right before a move/resize drag started; pushed to `undo` lazily on the first
     /// `mouseDragged`, so a click without a drag pushes nothing.
     private var dragSnapshot: Document?
+    private var dragMoved = false
     /// The document right before a shape draw started; pushed to `undo` only if the drawn shape commits.
     private var drawingDocumentBefore: Document?
     /// The fixed corner/endpoint a rect-like shape is drawn from.
@@ -253,13 +254,13 @@ public struct EditorSession: Sendable, Equatable {
             updateDrawingShape(&annotation, to: point)
             transient = .drawing(annotation)
         case .moving(let id, let last):
-            pushDragSnapshotIfNeeded()
+            dragMoved = true
             guard let annotation = document.annotation(id: id) else { return }
             let delta = CGPoint(x: point.x - last.x, y: point.y - last.y)
             document.update(annotation.moved(by: delta))
             transient = .moving(id: id, last: point)
         case .resizing(let id, let handle):
-            pushDragSnapshotIfNeeded()
+            dragMoved = true
             guard let annotation = document.annotation(id: id) else { return }
             document.update(AnnotationHandles.resized(annotation, handle: handle, to: point))
         case .cropping(let anchor, _):
@@ -271,10 +272,12 @@ public struct EditorSession: Sendable, Equatable {
         }
     }
 
-    private mutating func pushDragSnapshotIfNeeded() {
-        guard let snapshot = dragSnapshot else { return }
-        undo.push(snapshot)
+    /// The undo entry for a move or resize is recorded once, at mouseUp, and only if the pointer actually moved;
+    /// until then the snapshot stays around so Escape can put the annotation back.
+    private mutating func finishDrag() {
+        if dragMoved, let snapshot = dragSnapshot { undo.push(snapshot) }
         dragSnapshot = nil
+        dragMoved = false
     }
 
     private func updateDrawingShape(_ annotation: inout Annotation, to point: CGPoint) {
@@ -316,7 +319,7 @@ public struct EditorSession: Sendable, Equatable {
             drawAnchor = nil
         case .moving, .resizing:
             transient = nil
-            dragSnapshot = nil
+            finishDrag()
         case .cropping(_, let rect):
             transient = nil
             if rect.width > 8, rect.height > 8 {
@@ -384,6 +387,12 @@ public struct EditorSession: Sendable, Equatable {
             transient = nil
             drawingDocumentBefore = nil
             drawAnchor = nil
+        } else if transient != nil {
+            // A move or resize in progress: put the annotation back where the drag started, no undo entry.
+            if let snapshot = dragSnapshot { document = snapshot }
+            transient = nil
+            dragSnapshot = nil
+            dragMoved = false
         } else {
             selectedID = nil
         }
@@ -504,6 +513,6 @@ public struct EditorSession: Sendable, Equatable {
             && lhs.pendingCrop == rhs.pendingCrop
             && lhs.hitTolerance == rhs.hitTolerance
             && lhs.handleTolerance == rhs.handleTolerance
-            && lhs.pendingTextEdit == rhs.pendingTextEdit
+        // Private drag/text bookkeeping is transient and deliberately left out.
     }
 }

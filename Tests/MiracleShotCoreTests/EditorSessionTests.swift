@@ -680,4 +680,22 @@ final class EditorSessionTests: XCTestCase {
         XCTAssertEqual(session.displayAnnotations.count, 1)
         XCTAssertEqual(session.displayAnnotations, session.document.annotations)
     }
+
+    func testEscapeDuringAMoveRestoresThePositionWithoutAnUndoEntry() {
+        var session = makeSession()
+        session.handle(.selectTool(.rect))
+        session.handle(.mouseDown(CGPoint(x: 10, y: 10), shift: false))
+        session.handle(.mouseDragged(CGPoint(x: 50, y: 50)))
+        session.handle(.mouseUp(CGPoint(x: 50, y: 50)))
+        let placed = session.document
+        let undoCount = session.undo.undoStates.count
+        session.handle(.selectTool(.select))
+        session.handle(.mouseDown(CGPoint(x: 30, y: 30), shift: false))
+        session.handle(.mouseDragged(CGPoint(x: 60, y: 60)))
+        XCTAssertNotEqual(session.document, placed, "the drag moves the rect live")
+        session.handle(.escape)
+        XCTAssertEqual(session.document, placed)
+        XCTAssertNil(session.transient)
+        XCTAssertEqual(session.undo.undoStates.count, undoCount)
+    }
 }
