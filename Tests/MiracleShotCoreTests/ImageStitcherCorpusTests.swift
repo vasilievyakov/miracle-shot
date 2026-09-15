@@ -48,6 +48,9 @@ final class ImageStitcherCorpusTests: XCTestCase {
         XCTAssertEqual(result.image.height, expected.height, "\(name): height mismatch")
         guard result.image.width == expected.width, result.image.height == expected.height else { return }
 
+        // One draw per image; `TestImages.pixel` would redraw the whole stitch for every sample.
+        let actualRed = TestImages.channel(result.image, 0)
+        let expectedRed = TestImages.channel(expected, 0)
         let grid = 64
         var total = 0.0
         var samples = 0
@@ -55,9 +58,7 @@ final class ImageStitcherCorpusTests: XCTestCase {
             let y = expected.height * gy / grid
             for gx in 0..<grid {
                 let x = expected.width * gx / grid
-                let a = TestImages.pixel(result.image, x: x, y: y)
-                let b = TestImages.pixel(expected, x: x, y: y)
-                total += (Double(abs(Int(a.r) - Int(b.r))) + Double(abs(Int(a.g) - Int(b.g))) + Double(abs(Int(a.b) - Int(b.b)))) / 3
+                total += Double(abs(Int(actualRed[y][x]) - Int(expectedRed[y][x])))
                 samples += 1
             }
         }

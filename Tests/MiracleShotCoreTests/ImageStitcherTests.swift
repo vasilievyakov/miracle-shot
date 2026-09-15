@@ -196,6 +196,48 @@ final class ImageStitcherTests: XCTestCase {
         XCTAssertEqual(result.image.height, 310)
     }
 
+    /// A user scrolling by hand may go up instead of down: every frame then overlaps the previous one at its
+    /// top, and the new rows belong above the page collected so far.
+    func testStitchesFramesScrolledUpwards() throws {
+        let (frames, page) = makeScrollFrames()
+        let result = try XCTUnwrap(ImageStitcher.stitch(frames.reversed()))
+
+        XCTAssertFalse(result.usedFallback)
+        XCTAssertEqual(result.image.height, Page.headerHeight + Page.height + Page.footerHeight)
+        for pageRow in stride(from: 0, to: Page.height, by: 50) {
+            TestImages.assertClose(TestImages.pixel(result.image, x: Page.width / 2, y: Page.headerHeight + pageRow),
+                                   TestImages.pixel(page, x: Page.width / 2, y: pageRow), tolerance: 2)
+        }
+    }
+
+    /// Scrolling back into content that is already on the page adds nothing: such frames are skipped, not
+    /// appended as a fallback.
+    func testFramesWithinCollectedContentAreSkipped() throws {
+        let (frames, _) = makeScrollFrames()
+        let plain = try XCTUnwrap(ImageStitcher.stitch(frames))
+        let backAndForth = try XCTUnwrap(ImageStitcher.stitch([frames[0], frames[1], frames[2], frames[1], frames[3], frames[4]]))
+
+        XCTAssertFalse(backAndForth.usedFallback)
+        XCTAssertEqual(backAndForth.image.height, plain.image.height)
+    }
+
+    /// A "jump to bottom" pill or a hover highlight at the very start of the overlap band must not reject the
+    /// band: the mean over the whole band is what counts, not the mean of its first rows.
+    func testDynamicElementAtTheStartOfTheBandStillMatches() throws {
+        let width = Page.width
+        let overlap = 200
+        func page(_ x: Int, _ y: Int) -> (UInt8, UInt8, UInt8) { Noise.color(x: x, y: y, salt: 0x99) }
+        let a = render(width: width, rows: 0..<400, colorAt: page)
+        let pillRows = (400 - overlap)..<(400 - overlap + 15)
+        let b = render(width: width, rows: (400 - overlap)..<600) { x, y in
+            pillRows.contains(y) && x < width * 4 / 10 ? (255, 255, 255) : page(x, y)
+        }
+
+        let result = try XCTUnwrap(ImageStitcher.stitch([a, b]))
+        XCTAssertFalse(result.usedFallback)
+        XCTAssertEqual(result.image.height, 600)
+    }
+
     /// Frames that are otherwise a solid color, each with one distinct band. Most rows are pixel-identical
     /// between the two frames (gray == gray) no matter how they are aligned, so a matcher that only samples a
     /// few rows per candidate offset could report a match almost anywhere. Only the offset that truly lines up
