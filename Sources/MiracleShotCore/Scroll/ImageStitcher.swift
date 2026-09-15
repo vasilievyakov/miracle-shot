@@ -21,12 +21,15 @@ public enum ImageStitcher {
 
     /// Stitches vertically scrolled frames of the same width. One frame returns itself.
     /// Steps: (1) static header/footer = leading/trailing rows identical (row difference <= `staticTolerance`)
-    /// across all consecutive pairs, capped at 40 percent of the height each; (2) for each consecutive pair find
-    /// the overlap `d` (rows) in `minOverlap...(dynamicHeight - 1)` such that the last `d` dynamic rows of A match
-    /// the first `d` dynamic rows of B with mean absolute difference <= `matchTolerance` (per-row byte sums reject
-    /// candidates cheaply, full comparison confirms; prefer the largest matching `d`); (3) append B's dynamic rows after
-    /// `d`; (4) reattach the header at the top and the footer at the bottom. A pair without a match is appended
-    /// whole and `usedFallback` becomes true. Frames whose dynamic part fully repeats the previous one are skipped.
+    /// across all consecutive pairs, capped at 40 percent of the height each; (2) each new frame is matched
+    /// against the page collected so far: an overlap `d` (rows) in `minOverlap...(dynamicHeight - 1)` where the
+    /// last `d` dynamic rows of the page's bottom frame match the first `d` rows of the new frame with mean
+    /// absolute difference <= `matchTolerance` (per-row byte sums reject candidates cheaply, full comparison
+    /// confirms; prefer the largest matching `d`) appends the rows after `d`; the mirrored overlap against the
+    /// page's top frame (the user scrolled up) prepends the rows before it; (3) the header goes back on top and
+    /// the footer at the bottom. A frame that repeats the top or bottom frame, or overlaps them the "wrong" way
+    /// round (scrolled back into collected content), is skipped; one that matches nothing is appended whole and
+    /// `usedFallback` becomes true.
     public static func stitch(_ frames: [CGImage], minOverlap: Int = 8, matchTolerance: Double = 6.0 / 255,
                               staticTolerance: Double = 2.0 / 255) -> StitchResult? {
         guard let first = frames.first, first.width > 0 else { return nil }
@@ -48,51 +51,58 @@ public enum ImageStitcher {
 
         let (headerRows, footerRows) = staticEdges(buffers, tolerance: staticTolerance)
 
-        var segments: [Segment] = []
         var usedFallback = false
+        let dynStart = headerRows
+        func dynEnd(_ index: Int) -> Int { buffers[index].height - footerRows }
+        func dynHeight(_ index: Int) -> Int { max(0, dynEnd(index) - dynStart) }
 
-        if headerRows > 0 { segments.append(Segment(bufferIndex: 0, rowStart: 0, rowCount: headerRows)) }
+        // Dynamic rows of the page in order; `top` and `bottom` are the frames at its ends.
+        var body: [Segment] = [Segment(bufferIndex: 0, rowStart: dynStart, rowCount: dynHeight(0))]
+        var top = 0
+        var bottom = 0
 
-        var keptIndex = 0
-        var keptDynStart = headerRows
-        var keptDynEnd = buffers[0].height - footerRows
-        segments.append(Segment(bufferIndex: 0, rowStart: keptDynStart, rowCount: max(0, keptDynEnd - keptDynStart)))
-
-        for i in 1..<buffers.count {
-            let buffer = buffers[i]
-            let dynStart = headerRows
-            let dynEnd = buffer.height - footerRows
-            let dynHeight = max(0, dynEnd - dynStart)
-            let keptBuffer = buffers[keptIndex]
-            let keptDynHeight = max(0, keptDynEnd - keptDynStart)
-
-            if dynHeight == keptDynHeight,
-               bandDifference(keptBuffer, keptDynStart, buffer, dynStart, count: dynHeight) <= staticTolerance {
-                continue // this frame's dynamic content fully repeats the last kept frame; skip it
-            }
-
-            let overlap = findOverlap(keptBuffer, keptDynEnd, sums[keptIndex],
-                                      buffer, dynStart, sums[i],
-                                      maxOverlap: min(keptDynHeight, dynHeight) - 1,
-                                      minOverlap: minOverlap, width: width, matchTolerance: matchTolerance)
-
-            if let d = overlap {
-                let appendStart = dynStart + d
-                let appendCount = dynEnd - appendStart
-                if appendCount > 0 { segments.append(Segment(bufferIndex: i, rowStart: appendStart, rowCount: appendCount)) }
-            } else {
-                usedFallback = true
-                if dynHeight > 0 { segments.append(Segment(bufferIndex: i, rowStart: dynStart, rowCount: dynHeight)) }
-            }
-
-            keptIndex = i
-            keptDynStart = dynStart
-            keptDynEnd = dynEnd
+        func repeats(_ index: Int, _ kept: Int) -> Bool {
+            dynHeight(index) == dynHeight(kept)
+                && bandDifference(buffers[kept], dynStart, buffers[index], dynStart, count: dynHeight(index)) <= staticTolerance
+        }
+        // Rows of `kept`'s tail matching `index`'s head: `index` continues the page downwards after `kept`.
+        func overlapBelow(_ kept: Int, _ index: Int) -> Int? {
+            findOverlap(buffers[kept], dynEnd(kept), sums[kept], buffers[index], dynStart, sums[index],
+                        maxOverlap: min(dynHeight(kept), dynHeight(index)) - 1,
+                        minOverlap: minOverlap, width: width, matchTolerance: matchTolerance)
+        }
+        // Rows of `index`'s tail matching `kept`'s head: `index` continues the page upwards before `kept`.
+        func overlapAbove(_ kept: Int, _ index: Int) -> Int? {
+            findOverlap(buffers[index], dynEnd(index), sums[index], buffers[kept], dynStart, sums[kept],
+                        maxOverlap: min(dynHeight(kept), dynHeight(index)) - 1,
+                        minOverlap: minOverlap, width: width, matchTolerance: matchTolerance)
         }
 
-        let lastBuffer = buffers[buffers.count - 1]
+        for i in 1..<buffers.count {
+            if repeats(i, bottom) || repeats(i, top) { continue }
+
+            if let d = overlapBelow(bottom, i) {
+                let count = dynEnd(i) - (dynStart + d)
+                if count > 0 { body.append(Segment(bufferIndex: i, rowStart: dynStart + d, rowCount: count)) }
+                bottom = i
+            } else if let d = overlapAbove(top, i) {
+                let count = dynHeight(i) - d
+                if count > 0 { body.insert(Segment(bufferIndex: i, rowStart: dynStart, rowCount: count), at: 0) }
+                top = i
+            } else if top != bottom, overlapAbove(bottom, i) != nil || overlapBelow(top, i) != nil {
+                continue // scrolled back into content the page already has
+            } else {
+                usedFallback = true
+                if dynHeight(i) > 0 { body.append(Segment(bufferIndex: i, rowStart: dynStart, rowCount: dynHeight(i))) }
+                bottom = i
+            }
+        }
+
+        var segments: [Segment] = []
+        if headerRows > 0 { segments.append(Segment(bufferIndex: top, rowStart: 0, rowCount: headerRows)) }
+        segments += body
         if footerRows > 0 {
-            segments.append(Segment(bufferIndex: buffers.count - 1, rowStart: lastBuffer.height - footerRows, rowCount: footerRows))
+            segments.append(Segment(bufferIndex: bottom, rowStart: buffers[bottom].height - footerRows, rowCount: footerRows))
         }
 
         guard let image = buildOutput(width: width, segments: segments, buffers: buffers) else { return nil }
@@ -212,29 +222,31 @@ public enum ImageStitcher {
         return nil
     }
 
-    /// Mirrors `confirms` on the row-sum lower bound: rejects only when some prefix of the band already has a
-    /// mean summed-byte difference above the threshold, which means its true mean difference is above the
-    /// tolerance too and `confirms` would exit at the same row. A single noisy row (a cursor, a spinner) inside
-    /// an otherwise matching band therefore never rejects on its own.
+    /// Mirrors `confirms` on the row-sum lower bound: rejects once the summed-byte differences seen so far
+    /// already exceed what the whole band may total, which means the true mean is above the tolerance too. A
+    /// few noisy rows anywhere in the band (a cursor, a hover highlight, a "jump to bottom" pill) never reject
+    /// on their own.
     private static func quickReject(_ sumsA: [Int], _ tailStart: Int, _ sumsB: [Int], _ headStart: Int,
                                     _ d: Int, rowThreshold: Double) -> Bool {
+        let budget = rowThreshold * Double(d)
         var runningTotal = 0
         for k in 0..<d {
             runningTotal += abs(sumsA[tailStart + k] - sumsB[headStart + k])
-            if Double(runningTotal) > rowThreshold * Double(k + 1) { return true }
+            if Double(runningTotal) > budget { return true }
         }
         return false
     }
 
-    /// Full row-by-row mean absolute difference over the `d`-row band, with an early exit as soon as the
-    /// running mean exceeds `tolerance`.
+    /// Full row-by-row mean absolute difference over the `d`-row band, with an early exit as soon as the rows
+    /// seen so far already exceed the band's total budget (`tolerance * d`).
     private static func confirms(_ a: FrameBuffer, _ tailStart: Int, _ b: FrameBuffer, _ headStart: Int,
                                  _ d: Int, tolerance: Double) -> Bool {
         guard d > 0 else { return true }
+        let budget = tolerance * Double(d)
         var runningTotal = 0.0
         for k in 0..<d {
             runningTotal += rowDifference(a, tailStart + k, b, headStart + k)
-            if runningTotal / Double(k + 1) > tolerance { return false }
+            if runningTotal > budget { return false }
         }
         return true
     }

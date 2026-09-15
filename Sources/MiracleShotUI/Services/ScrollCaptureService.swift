@@ -22,7 +22,9 @@ public final class ScrollCaptureService: ScrollCapturing {
     /// whatever was last captured.
     private static let settleTimeout: TimeInterval = 0.4
     private static let settleStep: Duration = .milliseconds(80)
-    private static let manualPollInterval: Duration = .milliseconds(150)
+    /// Manual mode keeps every distinct poll, settled or not, so that consecutive frames still overlap while the
+    /// user keeps scrolling; the interval bounds how far a fast scroll can travel between two kept frames.
+    private static let manualPollInterval: Duration = .milliseconds(250)
     /// Wheel lines per step when a window ignores pixel-unit scroll events.
     private static let lineStep = 10
 
@@ -99,22 +101,17 @@ public final class ScrollCaptureService: ScrollCapturing {
         }
 
         if !auto {
-            hud.text = "Scroll the window with the mouse or trackpad, then press Return. Esc cancels."
+            hud.text = "Scroll the window slowly with the mouse or trackpad, then press Return. Esc cancels."
             hud.show()
-            var previousPoll: CGImage?
 
             while frames.count < Self.maxKeptFrames, Date() < deadline, !returnPressed, !escapePressed {
                 try await Task.sleep(for: Self.manualPollInterval)
                 guard !returnPressed, !escapePressed else { break }
                 let polled = try await capture.capture(.window(info)).image
-                if let previousPoll, FrameDiff.difference(previousPoll, polled) < FrameDiff.settledThreshold {
-                    let lastKept = frames[frames.count - 1]
-                    if FrameDiff.difference(lastKept, polled) >= FrameDiff.samePageThreshold {
-                        frames.append(polled)
-                        hud.text = "\(frames.count) frames. Keep scrolling, then press Return. Esc cancels."
-                    }
+                if FrameDiff.difference(frames[frames.count - 1], polled) >= FrameDiff.samePageThreshold {
+                    frames.append(polled)
+                    hud.text = "\(frames.count) of \(Self.maxKeptFrames) frames. Keep scrolling slowly, then press Return. Esc cancels."
                 }
-                previousPoll = polled
             }
             if escapePressed { throw CaptureError.cancelled }
         }
@@ -214,10 +211,14 @@ public final class ScrollCaptureService: ScrollCapturing {
 
     // MARK: - Debug dump
 
-    /// Writes every kept frame and the stitched result as PNGs under `MIRACLE_SHOT_SCROLL_DUMP`, when set.
+    /// Writes every kept frame and the stitched result as PNGs into a timestamped folder under
+    /// `MIRACLE_SHOT_SCROLL_DUMP`, when set, so consecutive captures never overwrite each other.
     private func dumpFramesIfRequested(frames: [CGImage], stitched: CGImage) {
         guard let path = ProcessInfo.processInfo.environment["MIRACLE_SHOT_SCROLL_DUMP"], !path.isEmpty else { return }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd-HHmmss"
         let directory = URL(fileURLWithPath: path, isDirectory: true)
+            .appendingPathComponent(formatter.string(from: Date()), isDirectory: true)
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             for (index, frame) in frames.enumerated() {
