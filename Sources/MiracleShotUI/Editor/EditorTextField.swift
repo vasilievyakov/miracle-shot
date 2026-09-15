@@ -38,14 +38,28 @@ final class EditorTextField: NSTextField, NSTextFieldDelegate {
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
         if commandSelector == #selector(NSResponder.insertNewline(_:)) {
-            onCommit?(stringValue)
+            resolve { onCommit?(stringValue) }
             return true
         }
         if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
-            onCancel?()
+            resolve { onCancel?() }
             return true
         }
         return false
+    }
+
+    /// Clicking elsewhere ends editing without Enter; keep what was typed instead of losing it.
+    func controlTextDidEndEditing(_ obj: Notification) {
+        resolve { onCommit?(stringValue) }
+    }
+
+    /// Enter, Escape and focus loss can all fire for one edit; only the first one counts.
+    private var resolved = false
+
+    private func resolve(_ action: () -> Void) {
+        guard !resolved else { return }
+        resolved = true
+        action()
     }
 
     func controlTextDidChange(_ obj: Notification) {

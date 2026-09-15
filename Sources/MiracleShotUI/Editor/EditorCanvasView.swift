@@ -149,7 +149,12 @@ final class EditorCanvasView: NSView {
     // MARK: - Cursor
 
     override func resetCursorRects() {
-        let cursor: NSCursor = session.tool == .select ? .arrow : .crosshair
+        let cursor: NSCursor
+        if case .moving = session.transient {
+            cursor = .openHand
+        } else {
+            cursor = session.tool == .select ? .arrow : .crosshair
+        }
         addCursorRect(bounds, cursor: cursor)
     }
 
@@ -173,7 +178,17 @@ final class EditorCanvasView: NSView {
     private func drawRenderedImage(ctx: CGContext) {
         guard let renderedImage else { return }
         let crop = session.document.effectiveCrop
-        ctx.draw(renderedImage, in: geometry.viewRect(fromImage: crop))
+        drawUpright(renderedImage, in: geometry.viewRect(fromImage: crop), ctx: ctx)
+    }
+
+    /// `CGContext.draw(_:in:)` ignores the view's flip, so in this y-down view a bitmap would land upside down;
+    /// flip locally around the target rect.
+    private func drawUpright(_ image: CGImage, in rect: CGRect, ctx: CGContext) {
+        ctx.saveGState()
+        ctx.translateBy(x: 0, y: rect.minY + rect.maxY)
+        ctx.scaleBy(x: 1, y: -1)
+        ctx.draw(image, in: rect)
+        ctx.restoreGState()
     }
 
     /// The shape being drawn right now (`session.transient == .drawing`). Every shape but blur draws for real,
@@ -223,7 +238,7 @@ final class EditorCanvasView: NSView {
         guard let cropRect = activeCropRect else { return }
         let source = session.document.source
         let viewFullRect = geometry.viewRect(fromImage: CGRect(origin: .zero, size: session.document.sourceSize))
-        ctx.draw(source, in: viewFullRect)
+        drawUpright(source, in: viewFullRect, ctx: ctx)
 
         BrandPalette.overlayDim.nsColor(alpha: BrandPalette.overlayDimAlpha).setFill()
         viewFullRect.fill()
@@ -231,7 +246,7 @@ final class EditorCanvasView: NSView {
         let viewCropRect = geometry.viewRect(fromImage: cropRect)
         NSGraphicsContext.saveGraphicsState()
         NSBezierPath(rect: viewCropRect).addClip()
-        ctx.draw(source, in: viewFullRect)
+        drawUpright(source, in: viewFullRect, ctx: ctx)
         NSGraphicsContext.restoreGraphicsState()
 
         BrandPalette.lime.nsColor().setStroke()
