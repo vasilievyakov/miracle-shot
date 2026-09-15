@@ -11,7 +11,6 @@ import os
 public final class ScrollCaptureService: ScrollCapturing {
     private let capture: CaptureServicing
     private let windowList: WindowListProviding
-    private let scrollAreas: ScrollAreaLocating
     private let notifications: NotificationPosting
     private let log = Logger(subsystem: "agency.blackbloom.miracleshot", category: "scroll")
     /// The Accessibility prompt is shown at most once per launch; later captures fall back to manual mode quietly.
@@ -29,11 +28,9 @@ public final class ScrollCaptureService: ScrollCapturing {
     /// Wheel lines per step when a window ignores pixel-unit scroll events.
     private static let lineStep = 10
 
-    public init(capture: CaptureServicing, windowList: WindowListProviding, scrollAreas: ScrollAreaLocating,
-                notifications: NotificationPosting) {
+    public init(capture: CaptureServicing, windowList: WindowListProviding, notifications: NotificationPosting) {
         self.capture = capture
         self.windowList = windowList
-        self.scrollAreas = scrollAreas
         self.notifications = notifications
     }
 
@@ -47,7 +44,7 @@ public final class ScrollCaptureService: ScrollCapturing {
 
         let started = Date()
         let deadline = started.addingTimeInterval(Self.maxDuration)
-        let windowCenter = CGPoint(x: info.frame.midX, y: info.frame.midY)
+        let center = CGPoint(x: info.frame.midX, y: info.frame.midY)
         var auto = AXIsProcessTrusted()
         if !auto, !promptedForAccessibility {
             promptedForAccessibility = true
@@ -57,30 +54,15 @@ public final class ScrollCaptureService: ScrollCapturing {
             // The key is the C global `kAXTrustedCheckOptionPrompt`; spelled out so Swift 6 does not flag the global.
             _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt" as CFString: true] as CFDictionary)
         }
-        if auto, !(await bringToFront(info, center: windowCenter)) {
+        if auto, !(await bringToFront(info, center: center)) {
             auto = false
             notifications.post(title: "Manual scrolling mode",
                                body: "The window could not be brought to the front, so it has to be scrolled by hand.",
                                isError: false)
         }
 
-        // With Accessibility the frames are cropped to the scroll area under the window's center, so sidebars
-        // and toolbars never reach the stitcher; without it the whole window is used.
-        let region = auto ? scrollAreas.scrollArea(near: windowCenter).flatMap { ScrollRegion(area: $0, window: info.frame) } : nil
-        if let region {
-            log.info("Scroll area: \(region.frame.origin.x, privacy: .public),\(region.frame.origin.y, privacy: .public) \(region.frame.width, privacy: .public)x\(region.frame.height, privacy: .public)")
-        }
-        let center = region.map { CGPoint(x: $0.frame.midX, y: $0.frame.midY) } ?? windowCenter
-        let scrollHeight = region?.frame.height ?? info.frame.height
-
-        /// One frame: the window, cut down to the scroll area when there is one.
-        func grab() async throws -> Capture {
-            let shot = try await capture.capture(.window(info))
-            guard let region else { return shot }
-            guard let cropped = region.crop(shot.image, scale: shot.scaleFactor) else { throw CaptureError.emptyImage }
-            return Capture(image: cropped, timestamp: shot.timestamp, sourceAppName: shot.sourceAppName,
-                           sourceWindowTitle: shot.sourceWindowTitle, bounds: region.frame, scaleFactor: shot.scaleFactor)
-        }
+        // The whole window is captured, chrome included; the user crops in the editor when needed.
+        func grab() async throws -> Capture { try await capture.capture(.window(info)) }
 
         let frame0 = try await grab()
         var frames: [CGImage] = [frame0.image]
@@ -94,7 +76,7 @@ public final class ScrollCaptureService: ScrollCapturing {
             CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: center, mouseButton: .left)?
                 .post(tap: .cghidEventTap)
             try await Task.sleep(for: .milliseconds(50))
-            let step = Int(scrollHeight * 0.75)
+            let step = Int(info.frame.height * 0.75)
             var useLineUnits = false
             var upwards = false
 
