@@ -30,9 +30,9 @@ public struct PinTransform: Sendable, Equatable {
         self.scale = Self.clamp(scale, to: Self.scaleRange, fallback: 1)
     }
 
-    /// NaN would survive `min`/`max` and loop the `didSet` forever, so a non-finite value keeps `fallback`.
+    /// NaN would survive `min`/`max` and loop the `didSet` forever, so it keeps `fallback`; infinities clamp.
     private static func clamp(_ value: CGFloat, to range: ClosedRange<CGFloat>, fallback: CGFloat) -> CGFloat {
-        guard value.isFinite else { return fallback }
+        guard !value.isNaN else { return fallback }
         return min(max(value, range.lowerBound), range.upperBound)
     }
 
