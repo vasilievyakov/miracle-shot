@@ -22,6 +22,9 @@ public enum ImageStitcher {
     /// this fraction of the dynamic height at either end of an overlap band; those rows are left out of the
     /// match and, where they differ, replaced by the other frame's rows.
     private static let maxStickyFraction = 0.1
+    /// Two relations of a frame to the page that place its first row within this many rows of each other
+    /// describe the same placement.
+    private static let placementSlack = 8
 
     /// Stitches vertically scrolled frames of the same width. One frame returns itself.
     /// Steps: (1) static header/footer = leading/trailing rows alike (row difference <= `matchTolerance`) in the
@@ -52,6 +55,7 @@ public enum ImageStitcher {
         }
 
         let sums = buffers.map(rowSums)
+        let details = buffers.map(rowDetail)
         let cornerRows = buffers.map(transparentBottomRows)
 
         // Edges are judged with the match tolerance: translucent chrome shifts by a few levels with whatever is
@@ -77,13 +81,13 @@ public enum ImageStitcher {
         }
         // Rows of `kept`'s tail matching `index`'s head: `index` continues the page downwards after `kept`.
         func overlapBelow(_ kept: Int, _ index: Int) -> Overlap? {
-            findOverlap(buffers[kept], dynEnd(kept), sums[kept], buffers[index], dynStart, sums[index],
+            findOverlap(buffers[kept], dynEnd(kept), sums[kept], details[kept], buffers[index], dynStart, sums[index],
                         maxOverlap: min(dynHeight(kept), dynHeight(index)) - 1, minOverlap: minOverlap,
                         maxSticky: maxSticky(kept, index), width: width, matchTolerance: matchTolerance)
         }
         // Rows of `index`'s tail matching `kept`'s head: `index` continues the page upwards before `kept`.
         func overlapAbove(_ kept: Int, _ index: Int) -> Overlap? {
-            findOverlap(buffers[index], dynEnd(index), sums[index], buffers[kept], dynStart, sums[kept],
+            findOverlap(buffers[index], dynEnd(index), sums[index], details[index], buffers[kept], dynStart, sums[kept],
                         maxOverlap: min(dynHeight(kept), dynHeight(index)) - 1, minOverlap: minOverlap,
                         maxSticky: maxSticky(kept, index), width: width, matchTolerance: matchTolerance)
         }
@@ -91,17 +95,34 @@ public enum ImageStitcher {
         for i in 1..<buffers.count {
             if repeats(i, bottom) || repeats(i, top) { continue }
 
-            // Every way the frame can relate to the page is tried and the closest match wins (the larger one
-            // on a tie): continuing the page downwards or upwards, or lying inside content the page already
-            // has (its tail meeting the bottom frame's head, or its head meeting the top frame's tail). A
-            // coincidental overlap can be long, but it never matches as well as the real relation.
+            // Every way the frame can relate to the page is tried and the best match wins (see
+            // `Overlap.beats`): continuing the page downwards or upwards, or lying inside content the page
+            // already has (its tail meeting the bottom frame's head, or its head meeting the top frame's
+            // tail). A coincidental overlap can be long, but it never explains as much as the real relation.
             let below = overlapBelow(bottom, i)
             let above = overlapAbove(top, i)
-            let inside = top != bottom ? [overlapAbove(bottom, i), overlapBelow(top, i)].compactMap { $0 } : []
+            let insideAbove = top != bottom ? overlapAbove(bottom, i) : nil
+            let insideBelow = top != bottom ? overlapBelow(top, i) : nil
+            let inside = [insideAbove, insideBelow].compactMap { $0 }
+            var extend = below.map { $0.beats(above) } ?? false ? below : above
             if let within = inside.max(by: { !$0.beats($1) }), within.beats(below), within.beats(above) {
-                continue // scrolled back into content the page already has
+                // A frame that reaches past the top or bottom of the page also overlaps the frames inside
+                // it, so both relations are real and place the frame at the same row; then it extends the
+                // page rather than repeating it. Only an inside match that contradicts the extension means
+                // the user scrolled back into content the page already has.
+                let bodyRows = body.reduce(0) { $0 + $1.rowCount }
+                let head = within == insideAbove
+                    ? bodyRows - dynHeight(bottom) - (dynHeight(i) - within.rows)
+                    : dynHeight(top) - within.rows
+                if let overlap = below, abs(head - (bodyRows - overlap.rows)) <= placementSlack {
+                    extend = overlap
+                } else if let overlap = above, abs(head + (dynHeight(i) - overlap.rows)) <= placementSlack {
+                    extend = overlap
+                } else {
+                    continue
+                }
             }
-            if let overlap = below, overlap.beats(above) {
+            if let overlap = extend, overlap == below {
                 // Rows at the end of the band that differ are the bottom frame's pinned footer covering content
                 // this frame shows: drop them from the page and take this frame's rows from there on. The
                 // bottom frame's transparent window corners go the same way; this frame is opaque there.
@@ -111,7 +132,7 @@ public enum ImageStitcher {
                 let count = dynEnd(i) - start
                 if count > 0 { body.append(Segment(bufferIndex: i, rowStart: start, rowCount: count)) }
                 bottom = i
-            } else if let overlap = above {
+            } else if let overlap = extend {
                 // Mirror image: rows at the start of the band that differ are the top frame's pinned header.
                 let h = overlap.leadingMismatch
                 trim(&body, first: h)
@@ -240,6 +261,25 @@ public enum ImageStitcher {
 
     // MARK: - Overlap search
 
+    /// Horizontal detail of each row: the sum of |delta| between horizontally adjacent RGB bytes. Text and
+    /// edges score high, blank space and a faint background grid low, whatever the row's brightness.
+    private static func rowDetail(_ buffer: FrameBuffer) -> [Int] {
+        (0..<buffer.height).map { row -> Int in
+            let base = row * buffer.bytesPerRow
+            var total = 0
+            buffer.bytes.withUnsafeBufferPointer { bytes in
+                var x = 1
+                while x < buffer.width {
+                    let i = base + x * 4
+                    total += abs(Int(bytes[i]) - Int(bytes[i - 4])) + abs(Int(bytes[i + 1]) - Int(bytes[i - 3]))
+                        + abs(Int(bytes[i + 2]) - Int(bytes[i - 2]))
+                    x += 1
+                }
+            }
+            return total
+        }
+    }
+
     /// Sum of every RGB byte in each row. |sum(a) - sum(b)| <= sum(|a - b|), so the difference of two row sums
     /// is a lower bound on the row's total absolute difference and can reject a candidate without touching pixels.
     private static func rowSums(_ buffer: FrameBuffer) -> [Int] {
@@ -259,19 +299,20 @@ public enum ImageStitcher {
     /// A matched band of `rows` with its mean row difference, and the runs of rows at its start and end that
     /// differ beyond the tolerance (pinned UI of one frame covering content the other shows); both are at most
     /// the sticky margin.
-    private struct Overlap {
+    private struct Overlap: Equatable {
         let rows: Int
         let mean: Double
+        /// Horizontal detail (see `rowDetail`) of the band rows that match within `evidenceRowTolerance`:
+        /// how much structure this alignment explains. A match on blank rows explains nothing.
+        let evidence: Int
         let leadingMismatch: Int
         let trailingMismatch: Int
-        /// The band is blank margin (see `blankBandFraction`): a match there is weak evidence.
-        let blank: Bool
 
-        /// A match on content beats any match on blank margin; otherwise the closer match wins, and within
-        /// `overlapTie` the larger band does.
+        /// The alignment that explains more structure wins; on equal evidence the closer match, and within
+        /// `overlapTie` the larger band.
         func beats(_ other: Overlap?) -> Bool {
             guard let other else { return true }
-            if blank != other.blank { return !blank }
+            if evidence != other.evidence { return evidence > other.evidence }
             if abs(mean - other.mean) <= overlapTie { return rows >= other.rows }
             return mean < other.mean
         }
@@ -280,22 +321,22 @@ public enum ImageStitcher {
     /// Two candidate overlaps whose mean row differences are this close count as equally good, and the
     /// larger one wins.
     private static let overlapTie = 0.5 / 255
-    /// A band with fewer changing rows (row sum differing from the row above by more than the uniform-row
-    /// threshold), as a share of its rows, than this fraction of the whole dynamic band's share is blank
-    /// margin: it can match exactly at many shifts and proves none of them.
-    private static let blankBandFraction = 0.25
+    /// A row counts as explained by an alignment (its detail adds to the evidence) when it differs by no
+    /// more than this; tighter than the band tolerance so that a row of different text never counts.
+    private static let evidenceRowTolerance = 3.0 / 255
 
     /// Finds the `d` in `minOverlap...maxOverlap` for which the last `d` rows of A's dynamic band (ending at
-    /// `tailEnd`) and the first `d` rows of B's dynamic band (starting at `headStart`) differ least, provided
-    /// they differ by no more than `matchTolerance` on average; ties go to the larger `d`. A shift by a whole
-    /// number of list rows can leave sparse text on a striped background almost matching, so the first band
-    /// under the tolerance is not good enough: the exact alignment differs by nearly nothing and must win.
-    /// The other way round, an element that keeps animating (a floating tag on a web page) leaves the true
-    /// alignment matching closely but not exactly, while the blank margin below the content in A and above
-    /// it in B match exactly at a shift that repeats the section: a match on rows with content is evidence,
-    /// a match on blank rows is not, so blank bands are only considered when no band with content matches.
+    /// `tailEnd`) and the first `d` rows of B's dynamic band (starting at `headStart`) match best: they must
+    /// differ by no more than `matchTolerance` on average, and among such bands the one whose matching rows
+    /// carry the most detail wins (`Overlap.evidence`); on equal evidence the closest, then the larger.
+    /// Two failure modes rule out simpler criteria. A shift by a whole number of list rows leaves sparse text
+    /// on a striped background almost matching, so the first band under the tolerance is not good enough:
+    /// the exact alignment, where the text rows match too, explains more. And an element that keeps
+    /// animating (a floating tag on a web page) leaves the true alignment matching closely but not exactly,
+    /// while the blank margin below a section in A and above it in B match exactly at a shift that repeats
+    /// the section; the closest match is wrong there, the one that explains the section's text is right.
     /// Up to `maxSticky` rows (never more than a quarter of `d`) at each end of the band are left out.
-    private static func findOverlap(_ a: FrameBuffer, _ tailEnd: Int, _ sumsA: [Int],
+    private static func findOverlap(_ a: FrameBuffer, _ tailEnd: Int, _ sumsA: [Int], _ detailA: [Int],
                                     _ b: FrameBuffer, _ headStart: Int, _ sumsB: [Int],
                                     maxOverlap: Int, minOverlap: Int, maxSticky: Int, width: Int,
                                     matchTolerance: Double) -> Overlap? {
@@ -304,47 +345,42 @@ public enum ImageStitcher {
         let bytesPerRow = 255 * Double(width * 3)
         let uniformRowThreshold = 2.0 * Double(width * 3)
 
-        // Rows of A whose sum differs from the row above (text, edges), counted from the top of the largest
-        // band, so the share of changing rows inside any band's interior is one subtraction; a band's share
-        // is compared with the largest band's.
+        // A's row detail accumulated from the top of the largest band: the detail inside any band's interior
+        // is one subtraction, and bounds the evidence the band could produce.
         let base = tailEnd - maxOverlap
-        var changing = [Int](repeating: 0, count: maxOverlap)
-        for k in 1..<maxOverlap {
-            let changed = Double(abs(sumsA[base + k] - sumsA[base + k - 1])) > uniformRowThreshold
-            changing[k] = changing[k - 1] + (changed ? 1 : 0)
+        var detail = [Int](repeating: 0, count: maxOverlap + 1)
+        for k in 0..<maxOverlap {
+            detail[k + 1] = detail[k] + detailA[base + k]
         }
-        func share(_ tailStart: Int, _ interior: Range<Int>) -> Double {
-            guard interior.count > 1 else { return 0 }
-            let k0 = tailStart + interior.lowerBound - base
-            return Double(changing[k0 + interior.count - 1] - changing[k0]) / Double(interior.count - 1)
-        }
-        let wholeMargin = min(maxSticky, maxOverlap / 4)
-        let blankShare = blankBandFraction * share(base, wholeMargin..<(maxOverlap - wholeMargin))
 
-        var best: (rows: Int, mean: Double)?
-        var bestBlank: (rows: Int, mean: Double)?
+        var best: (rows: Int, mean: Double, evidence: Int)?
         for d in stride(from: maxOverlap, through: minOverlap, by: -1) {
             let tailStart = tailEnd - d
             let margin = min(maxSticky, d / 4)
             let interior = margin..<(d - margin)
             // Rows that are all alike (blank space in both frames) prove nothing; such a band is no evidence.
             guard hasContent(sumsA, tailStart, interior, rowThreshold: uniformRowThreshold) else { continue }
-            let blank = share(tailStart, interior) < blankShare
-            if blank, best != nil { continue }
-            // The interior gets the whole band's budget (leaving the margins out must never make a band fail),
-            // and once a candidate exists, only a band that beats it by more than the tie is worth finishing.
-            var budget = matchTolerance * Double(d)
-            if let current = blank ? bestBlank : best {
-                budget = min(budget, (current.mean - overlapTie) * Double(interior.count))
-            }
-            guard budget > 0 else { continue }
+            // A band cannot beat the current best unless every one of its rows matching could still exceed
+            // the evidence found so far.
+            let k0 = tailStart + interior.lowerBound - base
+            let potential = detail[k0 + interior.count] - detail[k0]
+            if let best, potential <= best.evidence { continue }
+            // The interior must match within the tolerance on its own: a loose budget would let a long
+            // coincidental band (two screens of unrelated terminal text) collect evidence from the few lines
+            // that happen to agree.
+            let budget = matchTolerance * Double(interior.count)
             if quickReject(sumsA, tailStart, sumsB, headStart, interior, budget: budget * bytesPerRow) { continue }
-            guard let total = bandTotal(a, tailStart, b, headStart, interior, budget: budget) else { continue }
-            if blank { bestBlank = (d, total / Double(interior.count)) } else { best = (d, total / Double(interior.count)) }
+            guard let (total, evidence) = bandMatch(a, tailStart, b, headStart, interior, budget: budget,
+                                                    rowTolerance: evidenceRowTolerance, detailA: detailA) else { continue }
+            let candidate = (rows: d, mean: total / Double(interior.count), evidence: evidence)
+            if let best {
+                guard candidate.evidence > best.evidence
+                    || (candidate.evidence == best.evidence && candidate.mean < best.mean - overlapTie) else { continue }
+            }
+            best = candidate
         }
 
-        let blank = best == nil
-        guard let best = best ?? bestBlank else { return nil }
+        guard let best else { return nil }
         let d = best.rows
         let tailStart = tailEnd - d
         let margin = min(maxSticky, d / 4)
@@ -354,7 +390,7 @@ public enum ImageStitcher {
         while trailing < margin, rowDifference(a, tailEnd - 1 - trailing, b, headStart + d - 1 - trailing) > matchTolerance {
             trailing += 1
         }
-        return Overlap(rows: d, mean: best.mean, leadingMismatch: leading, trailingMismatch: trailing, blank: blank)
+        return Overlap(rows: d, mean: best.mean, evidence: best.evidence, leadingMismatch: leading, trailingMismatch: trailing)
     }
 
     /// True when the rows' byte sums are not all within `rowThreshold` of each other (2/255 per byte).
@@ -369,7 +405,7 @@ public enum ImageStitcher {
         return false
     }
 
-    /// Mirrors `bandTotal` on the row-sum lower bound: rejects once the summed-byte differences seen so far
+    /// Mirrors `bandMatch` on the row-sum lower bound: rejects once the summed-byte differences seen so far
     /// already exceed `budget`, which means the true total is above it too. A few noisy rows anywhere in the
     /// band (a cursor, a hover highlight) never reject on their own.
     private static func quickReject(_ sumsA: [Int], _ tailStart: Int, _ sumsB: [Int], _ headStart: Int,
@@ -382,17 +418,22 @@ public enum ImageStitcher {
         return false
     }
 
-    /// Full row-by-row absolute difference summed over `rows` of the band, or nil as soon as the rows seen so
-    /// far already exceed `budget`.
-    private static func bandTotal(_ a: FrameBuffer, _ tailStart: Int, _ b: FrameBuffer, _ headStart: Int,
-                                  _ rows: Range<Int>, budget: Double) -> Double? {
-        guard !rows.isEmpty else { return 0 }
+    /// Full row-by-row absolute difference summed over `rows` of the band, together with the detail of A's
+    /// rows that match within `rowTolerance` (the evidence), or nil as soon as the rows seen so far already
+    /// exceed `budget`.
+    private static func bandMatch(_ a: FrameBuffer, _ tailStart: Int, _ b: FrameBuffer, _ headStart: Int,
+                                  _ rows: Range<Int>, budget: Double, rowTolerance: Double,
+                                  detailA: [Int]) -> (total: Double, evidence: Int)? {
+        guard !rows.isEmpty else { return (0, 0) }
         var runningTotal = 0.0
+        var evidence = 0
         for k in rows {
-            runningTotal += rowDifference(a, tailStart + k, b, headStart + k)
+            let difference = rowDifference(a, tailStart + k, b, headStart + k)
+            runningTotal += difference
             if runningTotal > budget { return nil }
+            if difference <= rowTolerance { evidence += detailA[tailStart + k] }
         }
-        return runningTotal
+        return (runningTotal, evidence)
     }
 
     // MARK: - Output assembly
