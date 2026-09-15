@@ -56,4 +56,12 @@ final class OCRMappingTests: XCTestCase {
         let block = TextBlock(text: "x", rect: CGRect(x: 0, y: 0, width: 10, height: 10), confidence: 1)
         XCTAssertFalse(OCRResult(blocks: [block]).isEmpty)
     }
+
+    /// The line's first block is the reference: C overlaps B by 12 but A by only 4, so C starts a new line.
+    func testLineAssemblyComparesAgainstTheLinesFirstBlockNotTheLastAppended() {
+        let a = TextBlock(text: "A", rect: CGRect(x: 0, y: 0, width: 20, height: 20), confidence: 1)
+        let b = TextBlock(text: "B", rect: CGRect(x: 30, y: 8, width: 20, height: 20), confidence: 1)
+        let c = TextBlock(text: "C", rect: CGRect(x: 60, y: 16, width: 20, height: 20), confidence: 1)
+        XCTAssertEqual(OCRResult(blocks: [a, b, c]).text, "A B\nC")
+    }
 }
