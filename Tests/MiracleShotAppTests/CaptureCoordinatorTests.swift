@@ -12,6 +12,7 @@ final class CaptureCoordinatorTests: XCTestCase {
     private var notifications: FakeNotifications!
     private var preview: FakePreview!
     private var ocr: FakeOCR!
+    private var scroll: FakeScrollCapture!
     private var historyURL: URL!
     private var settings: Settings!
     private var sut: CaptureCoordinator!
@@ -25,13 +26,14 @@ final class CaptureCoordinatorTests: XCTestCase {
         notifications = FakeNotifications(log: log)
         preview = FakePreview(log: log)
         ocr = FakeOCR(log: log)
+        scroll = FakeScrollCapture(log: log)
         historyURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
         settings = Settings.default
         settings.saveDirectoryPath = "/tmp/miracle-shot-tests/shots"
         settings.namingTemplate = NamingTemplate(pattern: "{app}-{seq}")
         sut = CaptureCoordinator(settings: settings, historyURL: historyURL, capture: capture, selection: selection,
                                  clipboard: clipboard, files: files, notifications: notifications, preview: preview,
-                                 ocr: ocr)
+                                 ocr: ocr, scroll: scroll)
     }
 
     func testAreaCaptureHappyPath() async {
@@ -300,5 +302,60 @@ final class CaptureCoordinatorTests: XCTestCase {
         XCTAssertEqual(notifications.posted.last?.title, "Text recognition failed")
         XCTAssertEqual(notifications.lastBody, "OCR blew up")
         XCTAssertEqual(notifications.posted.last?.isError, true)
+    }
+
+    // MARK: - Scrolling capture
+
+    func testCaptureScrollingUsesTheWindowResult() async {
+        let window = WindowInfo(id: 9, frame: CGRect(x: 0, y: 0, width: 100, height: 50), layer: 0,
+                                ownerName: "Safari", ownerPID: 1, title: "Apple")
+        selection.result = .window(window)
+        await sut.perform(.captureScrolling)
+        XCTAssertEqual(log.entries, [
+            "hasPermission", "present(window)", "scroll(9)", "copy", "save(Safari-1.png, shots)", "preview",
+        ])
+        XCTAssertEqual(sut.state, .previewing)
+    }
+
+    func testCaptureScrollingWithAreaResultCancels() async {
+        selection.result = .area(rect: CGRect(x: 1, y: 2, width: 30, height: 40), displayID: 1)
+        await sut.perform(.captureScrolling)
+        XCTAssertFalse(log.entries.contains { $0.hasPrefix("scroll(") })
+        XCTAssertEqual(sut.state, .idle)
+        XCTAssertEqual(notifications.posted.count, 1)
+        XCTAssertEqual(notifications.posted.first?.isError, false)
+    }
+
+    func testCaptureScrollingCancelledReturnsToIdleQuietly() async {
+        let window = WindowInfo(id: 9, frame: CGRect(x: 0, y: 0, width: 100, height: 50), layer: 0,
+                                ownerName: "Safari", ownerPID: 1, title: "Apple")
+        selection.result = .window(window)
+        scroll.error = CaptureError.cancelled
+        await sut.perform(.captureScrolling)
+        XCTAssertEqual(sut.state, .idle)
+        XCTAssertTrue(notifications.posted.isEmpty)
+    }
+
+    func testCaptureScrollingFailureNotifies() async {
+        let window = WindowInfo(id: 9, frame: CGRect(x: 0, y: 0, width: 100, height: 50), layer: 0,
+                                ownerName: "Safari", ownerPID: 1, title: "Apple")
+        selection.result = .window(window)
+        scroll.error = CaptureError.noFrames
+        await sut.perform(.captureScrolling)
+        XCTAssertEqual(sut.state, .idle)
+        XCTAssertEqual(notifications.posted.count, 1)
+        XCTAssertEqual(notifications.posted.first?.isError, true)
+        XCTAssertEqual(notifications.posted.first?.title, "Capture failed")
+    }
+
+    func testCaptureScrollingFallbackNotifies() async {
+        let window = WindowInfo(id: 9, frame: CGRect(x: 0, y: 0, width: 100, height: 50), layer: 0,
+                                ownerName: "Safari", ownerPID: 1, title: "Apple")
+        selection.result = .window(window)
+        scroll.result = ScrollCaptureResult(capture: makeCapture(), usedFallback: true)
+        await sut.perform(.captureScrolling)
+        XCTAssertEqual(sut.state, .previewing)
+        XCTAssertEqual(notifications.posted.last?.title, "Some parts could not be aligned and were appended")
+        XCTAssertEqual(notifications.posted.last?.isError, false)
     }
 }

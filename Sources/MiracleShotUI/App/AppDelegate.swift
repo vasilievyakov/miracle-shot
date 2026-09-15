@@ -56,7 +56,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             files: FileSaveService(),
             notifications: toast,
             preview: preview,
-            ocr: OCRService()
+            ocr: OCRService(),
+            scroll: ScrollCaptureService(capture: captureService, notifications: toast)
         )
         coordinator.onHistoryChange = { [weak self] _ in self?.rebuildMenu() }
 

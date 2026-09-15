@@ -13,6 +13,8 @@ public enum CaptureError: LocalizedError, Equatable, Sendable {
     case displayNotFound
     case windowNotFound
     case emptyImage
+    case cancelled
+    case noFrames
 
     public var errorDescription: String? {
         switch self {
@@ -20,6 +22,8 @@ public enum CaptureError: LocalizedError, Equatable, Sendable {
         case .displayNotFound: return "The display is no longer available."
         case .windowNotFound: return "The window is no longer on screen."
         case .emptyImage: return "The screen capture returned no image."
+        case .cancelled: return "Cancelled."
+        case .noFrames: return "The window produced no frames."
         }
     }
 }
@@ -66,4 +70,21 @@ public enum CaptureError: LocalizedError, Equatable, Sendable {
     /// Shows the preview for `capture`. A later `show` replaces the current preview; the coordinator ignores
     /// `onDismiss` calls that belong to a superseded preview, so implementations may still call them.
     func show(capture: Capture, fileURL: URL?, onDismiss: @escaping @MainActor () -> Void)
+}
+
+/// Result of a scrolling capture: the stitched screenshot plus whether the stitcher had to fall back to plain
+/// concatenation for at least one pair of frames because no overlap could be found between them.
+public struct ScrollCaptureResult: Sendable {
+    public let capture: Capture
+    public let usedFallback: Bool
+
+    public init(capture: Capture, usedFallback: Bool) {
+        self.capture = capture
+        self.usedFallback = usedFallback
+    }
+}
+
+@MainActor public protocol ScrollCapturing: AnyObject {
+    /// Scrolls `window` and returns the stitched capture. Throws `CaptureError.cancelled` when the user stops it.
+    func captureScrolling(window: WindowInfo) async throws -> ScrollCaptureResult
 }

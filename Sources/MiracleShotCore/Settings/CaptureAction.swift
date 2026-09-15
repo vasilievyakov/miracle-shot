@@ -4,12 +4,14 @@ public enum CaptureAction: String, Codable, Sendable, CaseIterable, Hashable {
     case captureArea
     case captureWindow
     case captureFullScreen
+    case captureScrolling
 
     public var captureMode: CaptureMode {
         switch self {
         case .captureArea: return .area
         case .captureWindow: return .window
         case .captureFullScreen: return .fullScreen
+        case .captureScrolling: return .window
         }
     }
 
@@ -18,6 +20,7 @@ public enum CaptureAction: String, Codable, Sendable, CaseIterable, Hashable {
         case .captureArea: return "Capture Area"
         case .captureWindow: return "Capture Window"
         case .captureFullScreen: return "Capture Full Screen"
+        case .captureScrolling: return "Capture Scrolling Window"
         }
     }
 }
