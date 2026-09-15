@@ -43,6 +43,7 @@ final class EditorToolbar: NSView {
     private var currentTool: Tool = .select
     private var currentStyle = AnnotationStyle()
     private var currentBlurMode: BlurMode = .gaussian
+    private var lastRenderedDocument: Document?
 
     private var toolButtons: [BrandButton] = []
     private var swatchButtons: [SwatchButton] = []
@@ -217,7 +218,10 @@ final class EditorToolbar: NSView {
             presetPopup.selectItem(at: 0)
         }
 
-        if let rendered = AnnotationRenderer.render(session.document) {
+        // A full render (blur goes through CoreImage) is too expensive per drag tick; only redo it when the
+        // document itself changed.
+        if lastRenderedDocument != session.document, let rendered = AnnotationRenderer.render(session.document) {
+            lastRenderedDocument = session.document
             dragHandle.image = NSImage(cgImage: rendered, size: NSSize(width: 44, height: 28))
             dragHandle.renderProvider = { rendered }
         }

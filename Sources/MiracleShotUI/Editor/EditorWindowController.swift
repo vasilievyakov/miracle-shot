@@ -46,7 +46,7 @@ public final class EditorWindowController: NSObject, NSWindowDelegate {
         let window = EditorWindow(canvas: canvas, contentRect: Self.windowRect(for: capture),
                                   styleMask: [.titled, .closable, .resizable, .miniaturizable])
         window.title = "Miracle Shot Editor"
-        window.minSize = Self.minSize
+        window.contentMinSize = Self.minSize
         window.isReleasedWhenClosed = false
         window.backgroundColor = BrandPalette.ink.nsColor()
         window.delegate = self
@@ -100,7 +100,7 @@ public final class EditorWindowController: NSObject, NSWindowDelegate {
         }
     }
 
-    /// `window.close()`, not `performClose`: Done discards on purpose and must not ask again.
+    /// `window.close()`, not `performClose`: Done skips the confirmation on purpose and must not ask again.
     private func done() {
         guard let document = canvas?.session.document, let rendered = AnnotationRenderer.render(document) else { return }
         onDone?(rendered)
@@ -139,15 +139,13 @@ public final class EditorWindowController: NSObject, NSWindowDelegate {
     private static func windowRect(for capture: Capture) -> NSRect {
         let naturalSize = NSSize(width: CGFloat(capture.pixelWidth) / capture.scaleFactor,
                                  height: CGFloat(capture.pixelHeight) / capture.scaleFactor)
-        var size = NSSize(width: naturalSize.width + windowPadding,
-                          height: naturalSize.height + EditorToolbar.height + windowPadding)
-        size.width = max(size.width, minSize.width)
-        size.height = max(size.height, minSize.height)
-
         let screen = NSScreen.underCursor ?? NSScreen.screens.first
         let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-        size.width = min(size.width, visible.width * maxScreenFraction)
-        size.height = min(size.height, visible.height * maxScreenFraction)
+        // Cap to the screen first, then apply the floor, so the window never opens below its own minimum.
+        var size = NSSize(width: naturalSize.width + windowPadding,
+                          height: naturalSize.height + EditorToolbar.height + windowPadding)
+        size.width = max(minSize.width, min(size.width, visible.width * maxScreenFraction))
+        size.height = max(minSize.height, min(size.height, visible.height * maxScreenFraction))
 
         let origin = NSPoint(x: visible.midX - size.width / 2, y: visible.midY - size.height / 2)
         return NSRect(origin: origin, size: size)
@@ -170,17 +168,23 @@ private final class EditorWindow: NSWindow {
         guard event.modifierFlags.contains(.command), let key = event.charactersIgnoringModifiers?.lowercased() else {
             return super.performKeyEquivalent(with: event)
         }
-        switch key {
-        case "c", "z":
-            // The text field editing an annotation has its own Cmd+C (copy selected text) and Cmd+Z (undo
-            // typing); give the view hierarchy first refusal before treating these as editor shortcuts. With
-            // no main menu (LSUIElement) that hierarchy walk is the only place either can be handled at all.
-            if super.performKeyEquivalent(with: event) { return true }
-            if key == "c" {
-                onCopy?()
-            } else {
-                canvas.send(event.modifierFlags.contains(.shift) ? .redo : .undo)
+        // With no main menu (LSUIElement) nothing forwards the standard edit commands to the inline text field,
+        // so while an annotation is being typed they are sent to the responder chain by hand.
+        if canvas.isEditingText {
+            let editing: [String: Selector] = [
+                "c": #selector(NSText.copy(_:)), "x": #selector(NSText.cut(_:)), "v": #selector(NSText.paste(_:)),
+                "a": #selector(NSText.selectAll(_:)), "z": Selector(("undo:")),
+            ]
+            if let selector = editing[key] {
+                return NSApp.sendAction(selector, to: nil, from: nil)
             }
+        }
+        switch key {
+        case "c":
+            onCopy?()
+            return true
+        case "z":
+            canvas.send(event.modifierFlags.contains(.shift) ? .redo : .undo)
             return true
         case "w":
             performClose(nil)
