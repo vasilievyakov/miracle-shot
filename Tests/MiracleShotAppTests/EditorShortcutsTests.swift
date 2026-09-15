@@ -50,4 +50,32 @@ final class EditorShortcutsTests: XCTestCase {
     func testPlainZWithoutCommandIsNotUndo() {
         XCTAssertNil(EditorShortcuts.event(forKey: "z", modifiers: [], cropActive: false))
     }
+
+    // MARK: zoomAction
+
+    func testZoomInOnEqualsAndPlus() {
+        XCTAssertEqual(EditorShortcuts.zoomAction(forKey: "=", modifiers: .command), .zoomIn)
+        // cmd++ arrives as the shifted "+" character with .shift set alongside .command.
+        XCTAssertEqual(EditorShortcuts.zoomAction(forKey: "+", modifiers: [.command, .shift]), .zoomIn)
+    }
+
+    func testZoomOut() {
+        XCTAssertEqual(EditorShortcuts.zoomAction(forKey: "-", modifiers: .command), .zoomOut)
+    }
+
+    func testZoomFit() {
+        XCTAssertEqual(EditorShortcuts.zoomAction(forKey: "0", modifiers: .command), .fit)
+    }
+
+    func testZoomActualSize() {
+        XCTAssertEqual(EditorShortcuts.zoomAction(forKey: "1", modifiers: .command), .actualSize)
+    }
+
+    func testZoomActionRequiresCommand() {
+        XCTAssertNil(EditorShortcuts.zoomAction(forKey: "=", modifiers: []))
+    }
+
+    func testZoomActionUnmappedKeyIsNil() {
+        XCTAssertNil(EditorShortcuts.zoomAction(forKey: "9", modifiers: .command))
+    }
 }

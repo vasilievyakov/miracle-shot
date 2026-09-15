@@ -42,6 +42,19 @@ public final class EditorWindowController: NSObject, NSWindowDelegate {
         let session = EditorSession(document: document, style: .default(scaleFactor: capture.scaleFactor))
         let canvas = EditorCanvasView(session: session)
         let toolbar = EditorToolbar(presets: presets)
+        canvas.onZoomChange = { [weak toolbar] label in toolbar?.setZoomLabel(label) }
+
+        let scrollView = NSScrollView()
+        scrollView.documentView = canvas
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.scrollerStyle = .overlay
+        scrollView.drawsBackground = true
+        scrollView.backgroundColor = BrandPalette.ink.nsColor()
+        scrollView.allowsMagnification = false
+        scrollView.borderType = .noBorder
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
 
         let window = EditorWindow(canvas: canvas, contentRect: Self.windowRect(for: capture),
                                   styleMask: [.titled, .closable, .resizable, .miniaturizable])
@@ -51,14 +64,14 @@ public final class EditorWindowController: NSObject, NSWindowDelegate {
         window.backgroundColor = BrandPalette.ink.nsColor()
         window.delegate = self
 
-        let stack = NSStackView(views: [toolbar, canvas])
+        let stack = NSStackView(views: [toolbar, scrollView])
         stack.orientation = .vertical
         stack.spacing = 0
         NSLayoutConstraint.activate([
             toolbar.leadingAnchor.constraint(equalTo: stack.leadingAnchor),
             toolbar.trailingAnchor.constraint(equalTo: stack.trailingAnchor),
-            canvas.leadingAnchor.constraint(equalTo: stack.leadingAnchor),
-            canvas.trailingAnchor.constraint(equalTo: stack.trailingAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: stack.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: stack.trailingAnchor),
         ])
         window.contentView = stack
 
@@ -178,6 +191,9 @@ private final class EditorWindow: NSWindow {
             if let selector = editing[key] {
                 return NSApp.sendAction(selector, to: nil, from: nil)
             }
+        } else if let zoomAction = EditorShortcuts.zoomAction(forKey: key, modifiers: event.modifierFlags) {
+            canvas.applyZoomAction(zoomAction)
+            return true
         }
         switch key {
         case "c":

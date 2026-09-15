@@ -29,4 +29,21 @@ enum EditorShortcuts {
         default: return nil
         }
     }
+
+    enum ZoomAction: Equatable {
+        case zoomIn, zoomOut, fit, actualSize
+    }
+
+    /// Cmd+= / cmd++ zoom in, cmd+- zoom out, cmd+0 fit, cmd+1 actual size. Option/control rule a key out;
+    /// shift is allowed through unchecked since it is what turns "=" into "+" on the way in.
+    static func zoomAction(forKey key: String, modifiers: NSEvent.ModifierFlags) -> ZoomAction? {
+        guard modifiers.intersection([.command, .option, .control]) == .command else { return nil }
+        switch key {
+        case "=", "+": return .zoomIn
+        case "-": return .zoomOut
+        case "0": return .fit
+        case "1": return .actualSize
+        default: return nil
+        }
+    }
 }

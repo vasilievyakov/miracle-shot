@@ -52,6 +52,7 @@ final class EditorToolbar: NSView {
     private let undoButton: BrandButton
     private let redoButton: BrandButton
     private let blurToggleButton: BrandButton
+    private let zoomLabel = NSTextField(labelWithString: "100%")
     private let presetPopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let copyButton: BrandButton
     private let doneButton: BrandButton
@@ -128,13 +129,17 @@ final class EditorToolbar: NSView {
         leftStack.spacing = 8
         leftStack.translatesAutoresizingMaskIntoConstraints = false
 
+        zoomLabel.font = BrandFont.mono(size: 11, weight: 500)
+        zoomLabel.textColor = BrandPalette.bone.nsColor()
+        zoomLabel.translatesAutoresizingMaskIntoConstraints = false
+
         presetPopup.translatesAutoresizingMaskIntoConstraints = false
         presetPopup.addItem(withTitle: "None")
         for preset in presets { presetPopup.addItem(withTitle: preset.name) }
         presetPopup.target = self
         presetPopup.action = #selector(presetChosen(_:))
 
-        let rightStack = NSStackView(views: [presetPopup, copyButton, doneButton, applyButton, cancelButton, dragHandle])
+        let rightStack = NSStackView(views: [zoomLabel, presetPopup, copyButton, doneButton, applyButton, cancelButton, dragHandle])
         rightStack.orientation = .horizontal
         rightStack.alignment = .centerY
         rightStack.spacing = 8
@@ -230,6 +235,11 @@ final class EditorToolbar: NSView {
     /// S/M/L values for the tool currently active: line width for every drawing tool, font size for text.
     private func sizeValues(for tool: Tool) -> [CGFloat] {
         (tool == .text ? Self.fontSizes : Self.lineWidths).map { $0 * scaleFactor }
+    }
+
+    /// Updates the zoom percent label; pushed by the canvas through `onZoomChange`.
+    func setZoomLabel(_ text: String) {
+        zoomLabel.stringValue = text
     }
 
     // MARK: - Actions

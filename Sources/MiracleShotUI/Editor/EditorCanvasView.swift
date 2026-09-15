@@ -13,16 +13,22 @@ final class EditorCanvasView: NSView {
     var session: EditorSession
     /// Called after every handled event, so the toolbar can refresh undo/redo and tool state.
     var onChange: (() -> Void)?
+    /// Called after every zoom change (including a refit on resize) with the percent label.
+    var onZoomChange: ((String) -> Void)?
 
     private(set) var geometry: EditorGeometry
+    private(set) var zoom: EditorZoom = .fit
     private var renderedImage: CGImage?
     private var renderedDocument: Document?
     private var textField: EditorTextField?
+    private var clipViewObserver: NSObjectProtocol?
 
     init(session: EditorSession) {
         self.session = session
         self.geometry = EditorGeometry(scale: 1, origin: CGPoint(x: Self.padding, y: Self.padding), imageSize: session.document.sourceSize)
         super.init(frame: .zero)
+        // Document view of an NSScrollView: sized by hand in `relayout()`, never by Auto Layout constraints.
+        translatesAutoresizingMaskIntoConstraints = true
         rerender()
     }
 
@@ -37,16 +43,103 @@ final class EditorCanvasView: NSView {
     /// The cached render (crop plus annotations, no background), for the toolbar's drag thumbnail.
     func currentRender() -> CGImage? { renderedImage }
 
-    override func layout() {
-        super.layout()
-        updateGeometry()
+    /// View points per image pixel that shows a Retina capture at its natural on-screen size.
+    private var naturalScale: CGFloat { 1 / session.document.scaleFactor }
+
+    // MARK: - Zoom and scrolling
+
+    /// Becomes the document view of an `NSScrollView`'s clip view; watch its frame directly so a window
+    /// resize (or any other clip view size change) relays out the canvas.
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        if let clipViewObserver {
+            NotificationCenter.default.removeObserver(clipViewObserver)
+            self.clipViewObserver = nil
+        }
+        guard let clipView = superview as? NSClipView else { return }
+        clipView.postsFrameChangedNotifications = true
+        // View geometry notifications are posted on the main thread; handle them synchronously so the canvas
+        // keeps up with a live window resize instead of trailing it by a run loop turn.
+        clipViewObserver = NotificationCenter.default.addObserver(
+            forName: NSView.frameDidChangeNotification, object: clipView, queue: nil
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.relayout() }
+        }
+        relayout()
     }
 
-    private func updateGeometry() {
-        let maxScale = 1 / session.document.scaleFactor
-        geometry = EditorGeometry.fit(imageSize: session.document.sourceSize, in: bounds.size, padding: Self.padding, maxScale: maxScale)
+    /// Recomputes the frame and geometry for the current zoom against the clip view's current size, without
+    /// moving the scroll offset. Called on clip view size changes and, with the anchor adjustment layered on
+    /// top, from `setZoom`.
+    func relayout() {
+        guard let clipSize = enclosingScrollView?.contentView.bounds.size else { return }
+        let scale = zoom.scale(imageSize: session.document.sourceSize, viewSize: clipSize, padding: Self.padding, natural: naturalScale)
+        let scaledSize = CGSize(width: session.document.sourceSize.width * scale, height: session.document.sourceSize.height * scale)
+        frame.size = CGSize(width: max(clipSize.width, scaledSize.width + 2 * Self.padding),
+                            height: max(clipSize.height, scaledSize.height + 2 * Self.padding))
+        geometry = EditorGeometry.layout(imageSize: session.document.sourceSize, scale: scale, viewSize: frame.size, padding: Self.padding)
         session.hitTolerance = geometry.imageLength(fromView: 6)
         session.handleTolerance = geometry.imageLength(fromView: 8)
+        needsDisplay = true
+        window?.invalidateCursorRects(for: self)
+        onZoomChange?(EditorZoom.label(scale: geometry.scale, natural: naturalScale))
+    }
+
+    /// Sets `zoom` and keeps the image point under `anchor` (canvas coordinates) in the same place on screen:
+    /// remembers that point, relays out, then scrolls so the point lands back under `anchor`.
+    func setZoom(_ newZoom: EditorZoom, anchor: CGPoint) {
+        // Same path as any other focus loss: commit whatever is being typed before the geometry moves under it.
+        window?.makeFirstResponder(self)
+
+        let imagePoint = geometry.imagePoint(fromView: anchor)
+        zoom = newZoom
+        relayout()
+
+        guard let clipView = enclosingScrollView?.contentView else { return }
+        let newAnchor = geometry.viewPoint(fromImage: imagePoint)
+        var origin = clipView.bounds.origin
+        origin.x += newAnchor.x - anchor.x
+        origin.y += newAnchor.y - anchor.y
+        clipView.scroll(to: clampedScrollOrigin(origin, clipView: clipView))
+        enclosingScrollView?.reflectScrolledClipView(clipView)
+    }
+
+    /// Applies a keyboard zoom action, anchored at the center of the visible rect.
+    func applyZoomAction(_ action: EditorShortcuts.ZoomAction) {
+        let visible = enclosingScrollView?.documentVisibleRect ?? bounds
+        let anchor = CGPoint(x: visible.midX, y: visible.midY)
+        let newZoom: EditorZoom
+        switch action {
+        case .zoomIn: newZoom = zoom.zoomedIn(currentScale: geometry.scale, natural: naturalScale)
+        case .zoomOut: newZoom = zoom.zoomedOut(currentScale: geometry.scale, natural: naturalScale)
+        case .fit: newZoom = .fit
+        case .actualSize: newZoom = .fixed(naturalScale)
+        }
+        setZoom(newZoom, anchor: anchor)
+    }
+
+    private func clampedScrollOrigin(_ origin: CGPoint, clipView: NSClipView) -> CGPoint {
+        let maxX = max(0, frame.width - clipView.bounds.width)
+        let maxY = max(0, frame.height - clipView.bounds.height)
+        return CGPoint(x: min(max(origin.x, 0), maxX), y: min(max(origin.y, 0), maxY))
+    }
+
+    override func magnify(with event: NSEvent) {
+        let anchor = convert(event.locationInWindow, from: nil)
+        setZoom(EditorZoom.scaled(currentScale: geometry.scale, by: 1 + event.magnification, natural: naturalScale), anchor: anchor)
+    }
+
+    /// Cmd+wheel (or cmd+pinch-equivalent trackpad scroll) zooms, anchored at the cursor; plain wheel and
+    /// trackpad scrolling fall through to `super` so the enclosing scroll view scrolls instead.
+    override func scrollWheel(with event: NSEvent) {
+        guard event.modifierFlags.contains(.command) else {
+            super.scrollWheel(with: event)
+            return
+        }
+        let deltaY = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY : event.deltaY
+        let factor = event.hasPreciseScrollingDeltas ? 1 + deltaY * 0.01 : 1 + deltaY * 0.1
+        let anchor = convert(event.locationInWindow, from: nil)
+        setZoom(EditorZoom.scaled(currentScale: geometry.scale, by: factor, natural: naturalScale), anchor: anchor)
     }
 
     // MARK: - Single entry point

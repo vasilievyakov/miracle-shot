@@ -38,6 +38,23 @@ final class EditorGeometryTests: XCTestCase {
         XCTAssertEqual(geometry.origin, CGPoint(x: 24, y: 24))
     }
 
+    // MARK: layout
+
+    func testLayoutCentersImageSmallerThanViewSize() {
+        let geometry = EditorGeometry.layout(imageSize: CGSize(width: 100, height: 100), scale: 2,
+                                              viewSize: CGSize(width: 500, height: 400), padding: 24)
+        // scaled image 200x200 fits well inside the 500x400 view on both axes: centered, ignoring padding.
+        XCTAssertEqual(geometry.scale, 2)
+        XCTAssertEqual(geometry.origin, CGPoint(x: 150, y: 100))
+    }
+
+    func testLayoutPadsImageLargerThanViewSize() {
+        let geometry = EditorGeometry.layout(imageSize: CGSize(width: 4000, height: 3000), scale: 1,
+                                              viewSize: CGSize(width: 500, height: 400), padding: 24)
+        // scaled image 4000x3000 exceeds the view on both axes: starts at padding, not centered.
+        XCTAssertEqual(geometry.origin, CGPoint(x: 24, y: 24))
+    }
+
     // MARK: round trip
 
     func testViewImagePointRoundTrip() {

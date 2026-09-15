@@ -24,10 +24,17 @@ public struct EditorGeometry: Sendable, Equatable {
         guard imageSize.width > 0, imageSize.height > 0, availableWidth > 0, availableHeight > 0 else {
             return EditorGeometry(scale: 1, origin: CGPoint(x: padding, y: padding), imageSize: imageSize)
         }
-        let scale = min(maxScale, availableWidth / imageSize.width, availableHeight / imageSize.height)
+        let scale = EditorZoom.fit.scale(imageSize: imageSize, viewSize: viewSize, padding: padding, natural: maxScale)
+        return layout(imageSize: imageSize, scale: scale, viewSize: viewSize, padding: padding)
+    }
+
+    /// Places `imageSize` at `scale` in `viewSize`: centers it on an axis where the scaled image is smaller
+    /// than `viewSize`, else starts that axis at `padding` (the image fills the view and scrolls instead).
+    public static func layout(imageSize: CGSize, scale: CGFloat, viewSize: CGSize, padding: CGFloat) -> EditorGeometry {
         let scaledSize = CGSize(width: imageSize.width * scale, height: imageSize.height * scale)
-        let origin = CGPoint(x: (viewSize.width - scaledSize.width) / 2, y: (viewSize.height - scaledSize.height) / 2)
-        return EditorGeometry(scale: scale, origin: origin, imageSize: imageSize)
+        let originX = scaledSize.width < viewSize.width ? (viewSize.width - scaledSize.width) / 2 : padding
+        let originY = scaledSize.height < viewSize.height ? (viewSize.height - scaledSize.height) / 2 : padding
+        return EditorGeometry(scale: scale, origin: CGPoint(x: originX, y: originY), imageSize: imageSize)
     }
 
     public func imagePoint(fromView p: CGPoint) -> CGPoint {
