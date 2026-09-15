@@ -252,3 +252,49 @@ Commit: "Add scrolling capture with auto and manual modes".
 - Corpus: run scrolling captures with `MIRACLE_SHOT_SCROLL_DUMP=/path` set (launch the app from Terminal with the variable), copy the frames of 4-5 windows into `Tests/MiracleShotCoreTests/Fixtures/scroll/<app>/` with a reviewed `expected.png`; the corpus test must pass; tune `matchTolerance`/`minOverlap` if needed. Phase closes when the corpus passes.
 
 Then `git tag phase-3-complete`.
+
+---
+
+### Task 9: Editor zoom and scrolling
+
+Added after the first scrolling capture: the editor fitted the whole image into the window, so a 2262x19870 stitch became an unreadable strip and nothing could be enlarged. The canvas moves into an `NSScrollView`; the scale comes from a pure zoom model, so handles and strokes keep their on-screen size at every zoom.
+
+**Files:** create `Sources/MiracleShotCore/Editor/EditorZoom.swift`, `Tests/MiracleShotCoreTests/EditorZoomTests.swift`; modify `Sources/MiracleShotCore/Editor/EditorGeometry.swift` (+ tests in `EditorGeometryTests.swift`), `Sources/MiracleShotUI/Editor/EditorCanvasView.swift`, `EditorWindowController.swift`, `EditorShortcuts.swift` (+ `Tests/MiracleShotAppTests/EditorShortcutsTests.swift`), `EditorToolbar.swift` (zoom label only).
+
+Core:
+```swift
+/// Zoom state of the editor canvas. Scales are view points per image pixel; `natural` (1 / scaleFactor)
+/// shows a Retina capture at its on-screen size and is what the percent labels are relative to.
+public enum EditorZoom: Sendable, Equatable {
+    case fit
+    case fixed(CGFloat)
+
+    /// Multiples of the natural scale offered by zoom in / zoom out.
+    public static let presets: [CGFloat] = [0.1, 0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4]
+
+    /// Fit: the largest scale (<= natural) showing the whole image inside `viewSize` minus `padding`; when that
+    /// would be less than half of the width-only fit (a scrolling capture), fit the width and let it scroll,
+    /// and symmetrically for very wide images. Fixed: the scale clamped to presets.first...presets.last times natural.
+    public func scale(imageSize: CGSize, viewSize: CGSize, padding: CGFloat, natural: CGFloat) -> CGFloat
+    /// Next preset strictly above / below the current scale; at the ends returns the same zoom.
+    public func zoomedIn(currentScale: CGFloat, natural: CGFloat) -> EditorZoom
+    public func zoomedOut(currentScale: CGFloat, natural: CGFloat) -> EditorZoom
+    /// `.fixed(currentScale * factor)`, clamped (pinch and cmd+wheel).
+    public static func scaled(currentScale: CGFloat, by factor: CGFloat, natural: CGFloat) -> EditorZoom
+    /// "100%", "37%" relative to natural.
+    public static func label(scale: CGFloat, natural: CGFloat) -> String
+}
+```
+`EditorGeometry.layout(imageSize:scale:viewSize:padding:) -> EditorGeometry`: the origin centers the scaled image when it is smaller than `viewSize` on that axis, else the image starts at `padding`. `EditorGeometry.fit` stays for the existing tests and delegates to `EditorZoom.fit` + `layout`.
+
+Tests (`EditorZoomTests`): fit of a 1000x500 image in 800x600 at padding 24 and natural 0.5 gives 0.5 (never above natural); fit of 400x8000 in 800x600 fits the width (scale = (800-48)/400) instead of the height; fixed clamps to 0.1...4 times natural; zoomedIn from 0.5 with natural 0.5 goes to 0.75 (1.5 x natural), from the last preset stays; zoomedOut from a non-preset scale picks the next preset below; scaled clamps; labels round to whole percent. `EditorGeometryTests`: layout centers a small image and pads a large one.
+
+UI:
+- `EditorWindowController.buildWindow`: `NSScrollView` with `documentView = canvas`, `hasVerticalScroller/hasHorizontalScroller = true`, `autohidesScrollers = true`, `scrollerStyle = .overlay`, `drawsBackground = true` with `BrandPalette.ink`, `allowsMagnification = false` (zoom is ours). The scroll view replaces the canvas in the stack. The clip view posts frame change notifications; the canvas observes them (or the controller forwards `viewDidLayout`) and calls `canvas.relayout()`.
+- `EditorCanvasView`: `var zoom: EditorZoom = .fit` (private(set)); `func setZoom(_:anchor:)` where `anchor` is a point in the canvas (view) coordinates to keep still (cursor for pinch and wheel, visible center for keys): remember the image point under the anchor, recompute scale via `zoom.scale(...)` with `viewSize` = the clip view's bounds size, set `frame.size = max(clipSize, imageSize * scale + 2 * padding)`, geometry = `EditorGeometry.layout(...)`, then scroll the clip view so the same image point is under the anchor again (`enclosingScrollView?.contentView.scroll(to:)` + `reflectScrolledClipView`). Editing text commits before a zoom change (call the same path as focus loss). `layout()` no longer fits; `relayout()` recomputes the frame and geometry for the current zoom without moving the anchor. `onZoomChange: ((String) -> Void)?` with the label.
+- `magnify(with:)` -> `setZoom(EditorZoom.scaled(currentScale:, by: 1 + event.magnification, natural:), anchor: cursor)`. `scrollWheel(with:)`: with `.command` -> `scaled(by: 1 + deltaY * 0.01)` (precise deltas) or `1 + deltaY * 0.1`, anchored at the cursor; otherwise `super.scrollWheel` so the scroll view scrolls. Trackpad scrolling must not zoom.
+- `EditorShortcuts`: `enum ZoomAction { case zoomIn, zoomOut, fit, actualSize }` and `static func zoomAction(forKey:modifiers:) -> ZoomAction?`: cmd+"=" / cmd+"+" zoomIn, cmd+"-" zoomOut, cmd+"0" fit, cmd+"1" actualSize (`.fixed(natural)`); tested. `EditorWindow.performKeyEquivalent` maps them to `canvas.setZoom(..., anchor: visible center)` before the existing switch; while the text field is editing they are ignored (`super`).
+- `EditorToolbar`: a mono `zoomLabel` (bone, 11 pt) left of the preset popup showing "100%"; `func setZoomLabel(_:)`. The controller wires `canvas.onZoomChange`.
+- Cursor rects and `hitTolerance`/`handleTolerance` keep being derived from the geometry after every zoom change.
+- Drawing at high zoom: `draw(_:)` keeps drawing the rendered image into its full view rect; CoreGraphics clips to the dirty rect, so no tiling is needed. Max zoom is 4x natural.
+- Commit: "Add zoom and scrolling to the editor".
