@@ -75,7 +75,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         registerHotkeys()
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.title = "MS"
+        statusItem.button?.image = StatusBarIcon.make()
         rebuildMenu()
 
         let hasPermission = CGPreflightScreenCaptureAccess()

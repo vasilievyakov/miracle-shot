@@ -7,6 +7,9 @@ cd "$(dirname "$0")/.."
 APP_NAME="Miracle Shot"
 BUNDLE_ID="agency.blackbloom.miracleshot"
 OUT="build/$APP_NAME.app"
+# Marketing version from the nearest git tag (v0.3.0 -> 0.3.0); build number counts commits.
+VERSION="$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')"; VERSION="${VERSION:-0.1.0}"
+BUILD_NUMBER="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
 
 swift build -c release --product MiracleShot
 BIN="$(swift build -c release --show-bin-path)/MiracleShot"
@@ -36,8 +39,8 @@ cat > "$OUT/Contents/Info.plist" <<PLIST
   <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
   <key>CFBundleExecutable</key><string>MiracleShot</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.1.0</string>
-  <key>CFBundleVersion</key><string>1</string>
+  <key>CFBundleShortVersionString</key><string>$VERSION</string>
+  <key>CFBundleVersion</key><string>$BUILD_NUMBER</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
