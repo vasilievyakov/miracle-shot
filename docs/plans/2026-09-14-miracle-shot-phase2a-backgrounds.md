@@ -2,7 +2,7 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task (implementers on Sonnet, waves per the table below).
 
-**Goal:** A "Background" button in the quick preview that re-renders the screenshot on one of four Agentic Lab gradient presets (Lab Dark, Lime, Bone, Coral) and pushes the result through the normal copy/save/preview path; plus the app icon and brand fonts that the design marks as the first tasks of phase 2.
+**Goal:** A "Background" button in the quick preview that re-renders the screenshot on one of four lab brand gradient presets (Lab Dark, Lime, Bone, Coral) and pushes the result through the normal copy/save/preview path; plus the app icon and brand fonts that the design marks as the first tasks of phase 2.
 
 **Architecture:** Presets are `Codable` JSON in `Sources/MiracleShotCore/Resources/presets` (user overrides in `~/Library/Application Support/Miracle Shot/presets`). `BackgroundRenderer` (Core, CoreGraphics only) composes the source image over the fill with padding, corner radius and shadow; it is the single render path that the annotation editor will reuse later. The preview panel shows an `NSMenu` of presets; the coordinator renders and calls the existing `finish` path, so clipboard, disk, history and the preview all behave exactly as after a capture. The icon is generated at build time by a Swift script; fonts are variable TTFs in the UI resource bundle registered with CoreText at first use.
 
@@ -1420,7 +1420,7 @@ CTLineDraw(line, ctx)
   "edgeGlow": { "color": "#d4ff3f", "widthPercent": 8, "opacity": 0.55 },
   "frame": {
     "title": "AI-LAB",
-    "tagline": "Agentic Analytics & Research Lab",
+    "tagline": "Лаборатория",
     "footer": "ai-lab-agents.com",
     "barPercent": 5,
     "barColor": "#0b0b0c",

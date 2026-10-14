@@ -5,7 +5,7 @@
   "edgeGlow": { "color": "#d4ff3f", "widthPercent": 8, "opacity": 0.55 },
   "frame": {
     "title": "AI-LAB",
-    "tagline": "Agentic Analytics & Research Lab",
+    "tagline": "Лаборатория",
     "footer": "ai-lab-agents.com",
     "barPercent": 5,
     "barColor": "#0b0b0c",

@@ -30,7 +30,7 @@ public struct BrandColor: Sendable, Equatable, Hashable {
     }
 }
 
-/// Agentic Lab design tokens. Source of truth: ~/.claude/scripts/lab-brand.py.
+/// Lab brand design tokens. Source of truth: ~/.claude/scripts/lab-brand.py.
 public enum BrandPalette {
     /// Panel and frame background.
     public static let ink = BrandColor(hex: "#0b0b0c")!

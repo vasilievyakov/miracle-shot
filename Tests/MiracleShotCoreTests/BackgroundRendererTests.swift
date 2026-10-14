@@ -247,7 +247,7 @@ final class BackgroundRendererTests: XCTestCase {
         // floor). frame barPercent 10 -> 450 * 0.1 = 45 px (above the 36 pt floor). Canvas: width 600+90=690,
         // height 300 (source) + 90 (padding) + 90 (bars) = 480.
         var p = preset(fill: .solid(color: BrandPalette.ink), paddingPercent: 10)
-        p.frame = BrandFrame(title: "AI-LAB", tagline: "Agentic Analytics & Research Lab", footer: "ai-lab-agents.com",
+        p.frame = BrandFrame(title: "AI-LAB", tagline: "Лаборатория", footer: "ai-lab-agents.com",
                              barPercent: 10, barColor: BrandPalette.ink, titleColor: BrandPalette.lime,
                              textColor: BrandPalette.boneDim, accent: BrandPalette.coral)
         let out = try XCTUnwrap(BackgroundRenderer.render(source(600, 300), preset: p, scale: 1))

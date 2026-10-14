@@ -15,7 +15,7 @@ final class BrandPaletteTests: XCTestCase {
         XCTAssertNil(BrandColor(hex: "#zzzzzz"))
     }
 
-    func testTokensMatchAgenticLab() {
+    func testTokensMatchLabBrand() {
         XCTAssertEqual(BrandPalette.ink.hex, "#0b0b0c")
         XCTAssertEqual(BrandPalette.ink2.hex, "#141416")
         XCTAssertEqual(BrandPalette.ink3.hex, "#1c1c1f")

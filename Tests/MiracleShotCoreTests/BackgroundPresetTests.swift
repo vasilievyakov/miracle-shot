@@ -98,7 +98,7 @@ final class BackgroundPresetTests: XCTestCase {
     func testFrameAndEdgeGlowRoundTrip() throws {
         var preset = sample()
         preset.edgeGlow = EdgeGlow(color: BrandPalette.lime, widthPercent: 8, opacity: 0.55)
-        preset.frame = BrandFrame(title: "AI-LAB", tagline: "Agentic Analytics & Research Lab", footer: "ai-lab-agents.com",
+        preset.frame = BrandFrame(title: "AI-LAB", tagline: "Лаборатория", footer: "ai-lab-agents.com",
                                   barPercent: 5, barColor: BrandPalette.ink, titleColor: BrandPalette.lime,
                                   textColor: BrandPalette.boneDim, accent: BrandPalette.coral)
         let data = try JSONEncoder().encode(preset)

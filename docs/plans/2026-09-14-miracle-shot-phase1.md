@@ -1534,7 +1534,7 @@ final class BrandPaletteTests: XCTestCase {
         XCTAssertNil(BrandColor(hex: "#zzzzzz"))
     }
 
-    func testTokensMatchAgenticLab() {
+    func testTokensMatchLabBrand() {
         XCTAssertEqual(BrandPalette.ink.hex, "#0b0b0c")
         XCTAssertEqual(BrandPalette.ink2.hex, "#141416")
         XCTAssertEqual(BrandPalette.ink3.hex, "#1c1c1f")
@@ -1622,7 +1622,7 @@ public struct BrandColor: Sendable, Equatable, Hashable {
     }
 }
 
-/// Agentic Lab design tokens. Source of truth: ~/.claude/scripts/lab-brand.py.
+/// Lab brand design tokens. Source of truth: ~/.claude/scripts/lab-brand.py.
 public enum BrandPalette {
     /// Panel and frame background.
     public static let ink = BrandColor(hex: "#0b0b0c")!
