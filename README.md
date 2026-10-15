@@ -15,7 +15,7 @@ It was designed and built in two days (2026-09-14 and 2026-09-15) by a product p
 | **Capture** | area with a magnifier and window snapping, window, full screen, scrolling window (stitched into one tall image) |
 | **Quick preview** | floats in the corner after every capture; buttons Edit, Pin, OCR, Background, Reveal; drag the thumbnail into any app |
 | **Editor** | arrow, line, rectangle, ellipse, freehand, text, numbered steps, blur and pixelate, highlighter, crop; undo/redo, zoom and pan; Done puts the result on the clipboard, into the file and into the history |
-| **Backgrounds** | five presets in the lab palette (Lab Dark, Lime, Bone, Coral, Lab Brand with header and footer), OKLab gradients with dithering, padding and shadow in percent of the image; your own presets as JSON |
+| **Backgrounds** | five presets in the AI Lab palette (Lab Dark, Lime, Bone, Coral, Lab Brand with header and footer), OKLab gradients with dithering, padding and shadow in percent of the image; your own presets as JSON |
 | **Pin** | the capture floats above every window; drag, zoom, opacity, Esc or double click to close |
 | **OCR** | Vision, Russian and English, text goes to the clipboard |
 | **Scrolling capture** | pick a window, the app scrolls it (Accessibility) or you scroll by hand; the frames are stitched in either direction, pinned headers and footers are kept once |
@@ -154,9 +154,9 @@ Phase 1 shipped that evening: hotkeys, overlay with magnifier and window snappin
 
 **What to take from it.** The plans in `docs/plans` are complete enough that another agent can re-implement any task from them; that was the point of writing them that way. The design document records why, not only what. The review step is not optional: most tasks came back with a real defect or a gap that the tests written by the same agent did not catch. And the exit criterion "passes on a corpus of real captures" turned out to be the only one that mattered for the stitcher.
 
-## About the lab
+## About AI Lab
 
-Miracle Shot is a case study from [a lab on using AI agents in business](https://ai-lab-agents.com), run by Dmitry Soloveev and Yakov Vasiliev. Participants go from chatting with a model to building agent systems that carry a task end to end: their own project, data pipelines, quick services and interfaces, with Claude Code, Codex and Cursor as the daily tools. More than 230 professionals have been through it.
+Miracle Shot is a case study from [AI Lab](https://ai-lab-agents.com), a lab on using AI agents in business, run by Dmitry Soloveev and Yakov Vasiliev. Participants go from chatting with a model to building agent systems that carry a task end to end: their own project, data pipelines, quick services and interfaces, with Claude Code, Codex and Cursor as the daily tools. More than 230 professionals have been through it.
 
 This repository shows one such project in full: how a product person who does not write Swift gets a native macOS app out of agents in two days, what process makes that possible, and where it breaks. Read the plans, run the tests, open the app.
 
