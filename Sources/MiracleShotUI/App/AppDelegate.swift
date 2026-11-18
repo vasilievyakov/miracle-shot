@@ -12,6 +12,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private let historyMenu = HistoryMenuBuilder()
     private let editor = EditorWindowController()
     private let pins = PinController()
+    private let colorPicker = CustomColorPicker()
+    private static let userPresetsDirectory = Settings.supportDirectory.appendingPathComponent("presets", isDirectory: true)
     private var settingsWindow: SettingsWindowController!
     private var settings = Settings.default
     private let log = Logger(subsystem: "agency.blackbloom.miracleshot", category: "app")
@@ -27,10 +29,12 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         preview.handlers[.reveal] = { _, url in
             if let url { NSWorkspace.shared.activateFileViewerSelecting([url]) }
         }
-        preview.backgroundPresets = BackgroundPresetLibrary.load(
-            userDirectory: Settings.supportDirectory.appendingPathComponent("presets", isDirectory: true))
+        reloadBackgroundPresets()
         preview.onApplyBackground = { [weak self] capture, _, preset in
             self?.coordinator.applyBackground(preset, to: capture)
+        }
+        preview.onCustomColor = { [weak self] capture, _ in
+            self?.colorPicker.present { color, save in self?.applyCustomColor(color, save: save, to: capture) }
         }
         preview.handlers[.edit] = { [weak self] capture, _ in
             guard let self else { return }
@@ -93,6 +97,27 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private func trigger(_ action: CaptureAction) {
         log.info("Trigger \(action.rawValue, privacy: .public); screen recording permission: \(CGPreflightScreenCaptureAccess())")
         Task { await coordinator.perform(action) }
+    }
+
+    /// Built-ins plus the user's folder; the editor reads `preview.backgroundPresets` each time it opens.
+    private func reloadBackgroundPresets() {
+        preview.backgroundPresets = BackgroundPresetLibrary.load(userDirectory: Self.userPresetsDirectory)
+    }
+
+    /// Applies a solid backdrop in `color`; with `save`, first writes it to the user's presets so it shows up in the
+    /// Background menu and the editor without a relaunch. A failed save is reported, the backdrop is applied anyway.
+    private func applyCustomColor(_ color: BrandColor, save: Bool, to capture: Capture) {
+        let preset = BackgroundPreset.customColor(color)
+        if save {
+            do {
+                try BackgroundPresetLibrary.saveUserPreset(preset, in: Self.userPresetsDirectory)
+                reloadBackgroundPresets()
+            } catch {
+                log.error("Could not save preset \(preset.id, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                toast.post(title: "Could not save preset", body: error.localizedDescription, isError: true)
+            }
+        }
+        coordinator.applyBackground(preset, to: capture)
     }
 
     private func apply(_ updated: Settings) {
