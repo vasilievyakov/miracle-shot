@@ -146,6 +146,15 @@ public struct BackgroundPreset: Codable, Sendable, Equatable, Identifiable {
         self.frame = frame
     }
 
+    /// A solid backdrop in any color, with the same padding, corners and shadow as the built-in presets. The id is
+    /// derived from the color, so saving the same color twice overwrites one file instead of adding a duplicate.
+    public static func customColor(_ color: BrandColor) -> BackgroundPreset {
+        let hex = color.hex
+        return BackgroundPreset(id: "custom-\(hex.dropFirst())", name: "Custom \(hex)", fill: .solid(color: color),
+                                paddingPercent: 8, cornerRadiusPercent: 1.2,
+                                shadow: BackgroundShadow(blurPercent: 5, offsetPercent: 2, opacity: 0.35))
+    }
+
     private enum CodingKeys: String, CodingKey {
         case id, name, fill, paddingPercent, cornerRadiusPercent, shadow, glows, edgeGlow, frame
     }

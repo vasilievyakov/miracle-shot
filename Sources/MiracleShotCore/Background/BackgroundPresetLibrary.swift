@@ -19,6 +19,14 @@ public enum BackgroundPresetLibrary {
         builtIn() + presets(in: userDirectory)
     }
 
+    /// Writes `preset` as `<id>.json` into the user's folder, creating it if needed; a file with that id is replaced.
+    @discardableResult
+    public static func saveUserPreset(_ preset: BackgroundPreset, in directory: URL) throws -> URL {
+        let url = directory.appendingPathComponent("\(preset.id).json")
+        try JSONStore.save(preset, to: url)
+        return url
+    }
+
     private static func presets(in directory: URL) -> [BackgroundPreset] {
         // A missing folder is the normal case; a folder that exists but cannot be read is worth a log line.
         guard FileManager.default.fileExists(atPath: directory.path) else { return [] }

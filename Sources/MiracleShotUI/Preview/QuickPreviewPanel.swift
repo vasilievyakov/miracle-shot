@@ -27,6 +27,8 @@ public final class QuickPreviewPanel: PreviewPresenting {
     public var backgroundPresets: [BackgroundPreset] = []
     /// Called with the previewed capture and the chosen preset. The panel dismisses itself first.
     public var onApplyBackground: (@MainActor (Capture, URL?, BackgroundPreset) -> Void)?
+    /// Called from the menu's last item, "Custom Color…", with the previewed capture. The panel dismisses itself first.
+    public var onCustomColor: Handler?
 
     private var panel: NSPanel?
     private var timing: PreviewTiming?
@@ -146,6 +148,12 @@ public final class QuickPreviewPanel: PreviewPresenting {
             }
             menu.addItem(item)
         }
+        if onCustomColor != nil {
+            menu.addItem(.separator())
+            let custom = NSMenuItem(title: "Custom Color…", action: #selector(customColorChosen(_:)), keyEquivalent: "")
+            custom.target = self
+            menu.addItem(custom)
+        }
         // The menu runs its own event loop; hold the countdown while it is open (see `hoverChanged`) and resume it
         // afterwards only if the pointer left the panel, otherwise the usual mouseExited will do it later.
         isShowingBackgroundMenu = true
@@ -163,6 +171,13 @@ public final class QuickPreviewPanel: PreviewPresenting {
         let payload = current
         dismiss(animated: true)
         handler(payload.capture, payload.fileURL, preset)
+    }
+
+    @objc private func customColorChosen(_ sender: NSMenuItem) {
+        guard let current, let handler = onCustomColor else { return }
+        let payload = current
+        dismiss(animated: true)
+        handler(payload.capture, payload.fileURL)
     }
 
     private func run(_ action: Action) {

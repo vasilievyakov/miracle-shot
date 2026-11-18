@@ -73,7 +73,7 @@ The preview panel stays for six seconds (hover to keep it):
 | Edit | Opens the editor |
 | Pin | Pins the capture above all windows |
 | OCR | Recognizes the text and copies it; a notification shows the first lines |
-| Background | Menu of presets; the framed image replaces the capture (clipboard, file, history) |
+| Background | Menu of presets and Custom Color… (system color picker, optionally saved as a preset); the framed image replaces the capture (clipboard, file, history) |
 | Reveal | Shows the file in Finder |
 | Drag the thumbnail | Drops the PNG into any app |
 

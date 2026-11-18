@@ -109,6 +109,42 @@ final class BackgroundPresetTests: XCTestCase {
         XCTAssertTrue(preset.colors.contains(BrandPalette.coral))
     }
 
+    func testCustomColorPresetIsSolidWithTheBuiltInGeometry() throws {
+        let color = try XCTUnwrap(BrandColor(hex: "#3366cc"))
+        let preset = BackgroundPreset.customColor(color)
+        XCTAssertEqual(preset.id, "custom-3366cc")
+        XCTAssertEqual(preset.name, "Custom #3366cc")
+        XCTAssertEqual(preset.fill, .solid(color: color))
+        XCTAssertEqual(preset.paddingPercent, 8)
+        XCTAssertEqual(preset.cornerRadiusPercent, 1.2)
+        XCTAssertNotNil(preset.shadow)
+        XCTAssertEqual(preset.glows, [])
+        XCTAssertNil(preset.frame)
+    }
+
+    func testSavedUserPresetLoadsBackWithAnyColor() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("ms-presets-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let preset = BackgroundPreset.customColor(try XCTUnwrap(BrandColor(hex: "#3366cc")))
+
+        let url = try BackgroundPresetLibrary.saveUserPreset(preset, in: dir)
+        XCTAssertEqual(url.lastPathComponent, "custom-3366cc.json")
+
+        let loaded = BackgroundPresetLibrary.load(userDirectory: dir)
+        XCTAssertEqual(loaded.last, preset)
+        XCTAssertEqual(loaded.count, BackgroundPresetLibrary.builtIn().count + 1)
+    }
+
+    func testSavingTheSameColorTwiceKeepsOnePreset() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("ms-presets-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let preset = BackgroundPreset.customColor(try XCTUnwrap(BrandColor(hex: "#3366cc")))
+
+        _ = try BackgroundPresetLibrary.saveUserPreset(preset, in: dir)
+        _ = try BackgroundPresetLibrary.saveUserPreset(preset, in: dir)
+        XCTAssertEqual(BackgroundPresetLibrary.load(userDirectory: dir).filter { $0.id == preset.id }.count, 1)
+    }
+
     func testPresetWithoutFrameDecodesToNil() throws {
         let json = """
         {"id":"x","name":"X","fill":{"solid":{"color":"#0b0b0c"}},"paddingPercent":10,"cornerRadiusPercent":0}
